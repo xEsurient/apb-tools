@@ -1,17 +1,27 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>APB Reloaded tools</title><link rel="stylesheet" href="assets/style.css"></head>
+<title>APB Reloaded tools</title><link rel="stylesheet" href="assets/style.css">
+<style>
+  body{background:radial-gradient(1200px 600px at 70% -10%,rgba(242,163,58,.12),transparent),var(--bg)}
+  .hero{padding:40px 0 24px}.hero h1{margin:0 0 8px;font-size:34px;letter-spacing:-.01em}.hero h1 span{color:var(--acc)}
+  .hero p{margin:0;color:var(--dim);max-width:640px;font-size:15px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .tile{display:block;padding:22px;color:var(--text);transition:transform .15s,border-color .15s}.tile:hover{transform:translateY(-2px);border-color:rgba(242,163,58,.5);text-decoration:none}
+  .tile .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:rgba(242,163,58,.15);color:var(--acc);margin-bottom:14px}
+  .tile h2{margin:0 0 6px;font-size:18px}.tile p{margin:0;color:var(--dim)}
+  .foot{margin-top:28px}
+</style></head>
 <body>
-<header><h1>APB Reloaded tools</h1><nav><a href="config/">Config merge</a><a href="maps/">Map viewer</a></nav></header>
+<div class="topbar page"><div class="glass brand">APB TOOLS</div><div style="flex:1"></div>
+  <nav class="glass nav"><a href="maps/">Map viewer</a><a href="config/">Config merge</a></nav></div>
 <main class="page">
-  <div class="card"><h3><a href="config/">Config merge</a></h3>
-    <p>Check a localisation config (e.g. a German <code>.GER</code> pack) against the game's English <code>INT</code> files:
-    lists every line your config is missing, adds them at the right places and gives you the merged config as a zip,
-    with a summary of what was added to which file. Your files never leave your browser.</p></div>
-  <div class="card"><h3><a href="maps/">Map viewer</a></h3>
-    <p>Every district and map of the game in your browser: roam the 2D map (zoom, search, object details) or fly
-    through the districts in 3D with a 2D minimap.</p></div>
-  <p class="hint">Unofficial fan tools. APB Reloaded and its content belong to their owners. Item names can be
-    loaded live from <a href="https://apbdb.com">APBDB</a>.</p>
+  <div class="hero"><h1>APB Reloaded <span>tools</span></h1><p>Explore every district in 2D and 3D, and keep your localisation configs in sync with the game.</p></div>
+  <div class="tiles">
+    <a class="glass tile" href="maps/"><div class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/></svg></div>
+      <h2>Map viewer</h2><p>Roam each district on the 2D map or fly through it in 3D. Toggle contacts, drop-off points, mailboxes, vehicle spawners and more.</p></a>
+    <a class="glass tile" href="config/"><div class="ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/></svg></div>
+      <h2>Config merge</h2><p>Compare your localisation config with the game's own files, add the missing lines in the right places and download the merged zip with a summary.</p></a>
+  </div>
+  <p class="hint foot">Unofficial fan tools. APB Reloaded and its content belong to their owners. Item names can be loaded live from <a href="https://apbdb.com">APBDB</a>.</p>
 </main>
 </body></html>

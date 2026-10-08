@@ -2,37 +2,54 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>APB config merge</title><link rel="stylesheet" href="../assets/style.css">
 <style>
-  .steps{display:grid;grid-template-columns:1fr 1fr;gap:12px}.steps .card{margin:0}
-  .pick{display:flex;flex-direction:column;gap:6px}.pick label{display:flex;gap:6px;align-items:center}
-  #files tr.click{cursor:pointer}#files tr.click:hover td{background:#262a33}
-  #detail{max-height:60vh;overflow:auto}
+  body{background:radial-gradient(1200px 600px at 70% -10%,rgba(242,163,58,.10),transparent),var(--bg)}
+  .intro{color:var(--dim);max-width:760px;margin:6px 0 18px}
+  .steps{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media (max-width:820px){.steps{grid-template-columns:1fr}}
+  .step{padding:18px}.step .num{width:26px;height:26px;border-radius:50%;background:var(--acc);color:var(--acc-ink);display:inline-grid;place-items:center;font-weight:700;margin-right:8px}
+  .step h2{margin:0 0 12px;font-size:15px;display:flex;align-items:center}
+  .pick{display:flex;flex-direction:column;gap:10px}
+  .drop{display:flex;align-items:center;gap:10px;padding:12px;border:1px dashed rgba(255,255,255,.18);border-radius:12px;color:var(--dim);cursor:pointer;position:relative}
+  .drop:hover{border-color:rgba(242,163,58,.6);color:var(--text)}.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .drop b{color:var(--text);font-weight:600}
+  .opt{display:flex;gap:10px;align-items:center;cursor:pointer;user-select:none;color:var(--text)}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:16px 0}
+  #files tr.click{cursor:pointer}#files tr.click:hover td{background:rgba(255,255,255,.03)}
+  #detail{max-height:65vh;overflow:auto}
   .st-added{color:var(--ok)}.st-duplicate-in-custom,.st-only-in-custom{color:var(--bad)}.st-same-text{color:var(--dim)}
   td.v{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .info{font-size:12.5px;color:var(--dim)}
 </style></head>
 <body>
-<header><h1>APB config merge</h1><nav><a href="../">Home</a><a class="active" href="./">Config merge</a><a href="../maps/">Map viewer</a></nav></header>
+<div class="topbar page"><a class="glass brand" href="../">APB TOOLS</a><div style="flex:1"></div>
+  <nav class="glass nav"><a href="../maps/">Map viewer</a><a class="on" href="./">Config merge</a></nav></div>
 <main class="page">
-  <p>Finds the lines your localisation config is missing compared to the game's own files, adds them at the right
-    places (in English, ready to translate) and gives you the merged config back as a zip, with a summary of what was
-    added to which file. Everything runs in your browser: your files are not uploaded anywhere.</p>
+  <h1 style="margin:8px 0 0;font-size:26px">Config merge</h1>
+  <p class="intro">Finds the lines your localisation config is missing compared to the game's own files, adds them in the right
+    places (in English, ready to translate) and gives you the merged config back as a zip, with a summary of what was added
+    to which file. Everything runs in your browser: your files are not uploaded anywhere.</p>
   <div class="steps">
-    <div class="card pick"><h3>1. Reference (the game's lines)</h3>
-      <label>Game folder <code>APBGame/Localization/INT</code>: <input type="file" id="refdir" webkitdirectory multiple></label>
-      <label>…or a zip / files: <input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt"></label>
-      <label><input type="checkbox" id="useapbdb" checked> use <a href="https://apbdb.com" target="_blank">APBDB</a> for item names
-        (<code>InventoryItemTypes</code>) when the reference doesn't include it</label>
-      <span id="refinfo" class="hint">No reference chosen: only APBDB item names can be checked.</span></div>
-    <div class="card pick"><h3>2. Your config</h3>
-      <label>Config zip: <input type="file" id="cuszip" accept=".zip" multiple></label>
-      <label>…or a folder: <input type="file" id="cusdir" webkitdirectory multiple></label>
-      <label><input type="checkbox" id="mark"> mark added lines with a <code>; added from …</code> comment</label>
-      <label><input type="checkbox" id="addmissing"> also add whole files your config doesn't have (copied from the reference, untranslated)</label>
-      <span id="cusinfo" class="hint">Files are paired with the reference by name (e.g. <code>APBGame.GER</code> ↔ <code>APBGame.int</code>).</span></div>
+    <section class="glass step"><h2><span class="num">1</span>Reference: the game's lines</h2><div class="pick">
+      <label class="drop"><input type="file" id="refdir" webkitdirectory multiple>📁 <span>Choose the game folder <b>APBGame/Localization/INT</b></span></label>
+      <label class="drop"><input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt">🗜 <span>…or a <b>zip</b> / single files</span></label>
+      <label class="opt"><span class="switch on" data-cb="useapbdb"></span>Use <a href="https://apbdb.com" target="_blank">APBDB</a> item names when the reference has no <code>InventoryItemTypes</code></label>
+      <span id="refinfo" class="info">No reference chosen: only APBDB item names can be checked.</span></div></section>
+    <section class="glass step"><h2><span class="num">2</span>Your config</h2><div class="pick">
+      <label class="drop"><input type="file" id="cuszip" accept=".zip" multiple>🗜 <span>Choose your config <b>zip</b></span></label>
+      <label class="drop"><input type="file" id="cusdir" webkitdirectory multiple>📁 <span>…or its <b>folder</b></span></label>
+      <label class="opt"><span class="switch" data-cb="mark"></span>Mark added lines with a <code>; added from …</code> comment</label>
+      <label class="opt"><span class="switch" data-cb="addmissing"></span>Also add whole files your config doesn't have</label>
+      <span id="cusinfo" class="info">Files are paired with the reference by name (e.g. <code>APBGame.GER</code> ↔ <code>APBGame.int</code>).</span></div></section>
   </div>
-  <div style="margin:12px 0"><button id="run" class="primary">Compare</button> <button id="dlzip" disabled>Download merged config (.zip)</button>
-    <button id="dlsum" disabled>Download SUMMARY.md</button> <span id="status" class="dim"></span></div>
+  <input type="checkbox" id="useapbdb" checked hidden><input type="checkbox" id="mark" hidden><input type="checkbox" id="addmissing" hidden>
+  <div class="bar"><button id="run" class="primary">Compare</button><button id="dlzip" disabled>Download merged config (.zip)</button>
+    <button id="dlsum" disabled>Download SUMMARY.md</button><span id="status" class="dim"></span></div>
   <div id="out"></div>
   <div id="detail"></div>
 </main>
+<script>
+document.querySelectorAll('.switch[data-cb]').forEach(sw => sw.closest('label').addEventListener('click', e => {
+  e.preventDefault(); const cb = document.getElementById(sw.dataset.cb); cb.checked = !cb.checked; sw.classList.toggle('on', cb.checked);
+}));
+</script>
 <script type="module" src="app.js"></script>
 </body></html>

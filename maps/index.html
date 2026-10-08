@@ -3,40 +3,64 @@
 <title>APB map viewer</title>
 <link rel="stylesheet" href="../assets/style.css">
 <style>
-  body{display:flex;flex-direction:column;height:100vh}
-  #wrap{flex:1;display:flex;min-height:0}
-  #side{width:300px;overflow:auto;padding:10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:6px}
-  #side label{font-size:13px}
-  #stage{flex:1;position:relative;min-width:0}
-  #c2d,#c3d{position:absolute;inset:0;width:100%;height:100%}
-  #c2d{cursor:crosshair}
-  #mini{position:absolute;right:12px;bottom:12px;width:260px;height:260px;border:1px solid var(--line);background:#000a;display:none;cursor:pointer}
-  #tip{position:absolute;display:none;background:#000c;padding:3px 6px;border-radius:3px;font-size:12px;pointer-events:none;white-space:nowrap}
-  #help{position:absolute;left:12px;bottom:12px;font-size:12px;background:#000a;padding:6px 9px;border-radius:4px;display:none}
-  #progress{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:#000c;padding:6px 12px;border-radius:4px;display:none}
-  #detail table td{font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis}
-  .modes button.active{border-color:var(--acc);color:var(--acc)}
+  html,body{overflow:hidden}
+  #stage{position:fixed;inset:0}
+  #c2d,#c3d{position:absolute;inset:0;width:100%;height:100%}#c2d{cursor:grab}#c2d.drag{cursor:grabbing}
+  .topbar{position:fixed;left:0;right:0;top:0;z-index:5;pointer-events:none}.topbar>*{pointer-events:auto}
+  .search{flex:0 1 420px;position:relative;display:flex;align-items:center;gap:8px;padding:0 14px}
+  .search input{flex:1;border:0;background:none;padding:11px 0}.search svg{color:var(--dim);flex:none}
+  #results{position:absolute;left:0;right:0;top:calc(100% + 6px);max-height:60vh;overflow:auto;display:none;padding:6px}
+  #results div{padding:8px 10px;border-radius:9px;cursor:pointer;display:flex;gap:10px;align-items:center}#results div:hover,#results div.on{background:rgba(255,255,255,.06)}
+  #results small{color:var(--dim);margin-left:auto}
+  .chip{display:flex;align-items:center;gap:8px;padding:4px 6px 4px 14px}.chip select{border:0;background-color:transparent;padding:6px 26px 6px 4px;font-weight:600}
+  .spacer{flex:1}
+  #panel{position:fixed;left:16px;top:84px;width:300px;max-height:calc(100vh - 100px);overflow:auto;padding:14px;z-index:4}
+  #panel h4{margin:4px 4px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);display:flex;gap:8px;align-items:center;font-weight:600}
+  .row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:9px;cursor:pointer;user-select:none}.row:hover{background:rgba(255,255,255,.04)}
+  .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c)}
+  .row .n{margin-left:auto;color:var(--dim);font-size:12px}
+  details{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}summary{cursor:pointer;list-style:none;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600;padding:4px}
+  summary::before{content:"▸ "}details[open] summary::before{content:"▾ "}
+  #detail{position:fixed;right:16px;top:84px;width:310px;padding:16px;z-index:4;display:none}
+  #detail .t{font-size:16px;font-weight:650;padding-right:22px}#detail .s{color:var(--dim);font-size:12px;margin:2px 0 12px}
+  #detail .kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:12.5px;word-break:break-word}#detail .kv span:nth-child(odd){color:var(--dim)}
+  #detail .acts{margin-top:14px;display:flex;gap:8px}#detail .acts button{flex:1;justify-content:center}
+  #detail .x{position:absolute;right:10px;top:10px;border:0;background:none;color:var(--dim);padding:4px 8px}
+  #zoom{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;z-index:4;overflow:hidden}#zoom button{border:0;border-radius:0;background:none;width:40px;height:40px;justify-content:center;font-size:18px}
+  #mini{position:fixed;right:16px;bottom:16px;width:220px;height:220px;padding:6px;display:none;z-index:4}#mini canvas{width:100%;height:100%;border-radius:10px;cursor:pointer;display:block}
+  #help{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:8px 14px;font-size:12px;color:var(--dim);display:none;z-index:4;white-space:nowrap}
+  #progress{position:fixed;left:50%;top:90px;transform:translateX(-50%);padding:10px 16px;display:none;z-index:6}
+  #tip{position:fixed;display:none;padding:5px 9px;font-size:12px;pointer-events:none;z-index:7;white-space:nowrap}
+  #paneltoggle{display:none}
+  @media (max-width:760px){#panel{top:auto;bottom:16px;left:16px;right:16px;width:auto;max-height:45vh;display:none}#panel.open{display:block}#paneltoggle{display:inline-flex}
+    #detail{left:16px;right:16px;width:auto;top:auto;bottom:16px}.search{flex:1 1 100%;order:5}#mini{width:150px;height:150px}}
 </style>
 <script type="importmap">{ "imports": { "three": "../vendor/three.module.js" } }</script>
 </head>
 <body>
-<header><h1>APB map viewer</h1><nav><a href="../">Home</a><a href="../config/">Config merge</a><a class="active" href="./">Map viewer</a></nav>
-  <select id="district"></select>
-  <span class="modes"><button data-mode="2d" class="active">2D map</button><button data-mode="3d">3D</button></span>
-  <span id="v3btns" style="display:none"><button id="btop">Top view</button><button id="bover">Overview</button></span>
-  <span id="status" class="dim"></span></header>
-<div id="wrap">
-  <aside id="side">
-    <input id="search" placeholder="search name / label / class (Enter)">
-    <div id="kinds"></div>
-    <div id="detail" class="card"><span class="dim">Click an object for its details.</span></div>
-    <p class="hint">2D: drag to pan, wheel to zoom. 3D: drag to look, WASD / arrows to move, Q / E down / up,
-      Shift faster, wheel changes speed, click an object for details, click the minimap to jump there.</p>
-  </aside>
-  <div id="stage">
-    <canvas id="c2d"></canvas><div id="c3d"></div><canvas id="mini" width="260" height="260"></canvas>
-    <div id="tip"></div><div id="help"></div><div id="progress"></div>
-  </div>
+<div id="stage"><canvas id="c2d"></canvas><div id="c3d"></div></div>
+<div class="topbar">
+  <a class="glass brand" href="../">APB MAPS <small id="dname"></small></a>
+  <div class="glass search"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2"/></svg>
+    <input id="search" placeholder="Search contacts, places, objects…" autocomplete="off"><div id="results" class="glass"></div></div>
+  <div class="glass chip">District <select id="district"></select></div>
+  <div class="spacer"></div>
+  <button class="glass" id="paneltoggle">Layers</button>
+  <div class="glass seg" id="modes"><button data-mode="2d" class="on">2D</button><button data-mode="3d">3D</button></div>
+  <div class="glass seg" id="v3btns" style="display:none"><button id="btop">Top</button><button id="bover">Overview</button></div>
+  <nav class="glass nav"><a href="../config/">Config merge</a></nav>
 </div>
+<aside id="panel" class="glass">
+  <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></svg> Map layers</h4>
+  <div id="layers"></div>
+  <details id="scenery"><summary>Scenery</summary><div id="kinds"></div></details>
+  <details id="opts"><summary>3D options</summary>
+    <div class="row" data-opt="textures"><span>Textures</span><span class="switch on" style="margin-left:auto"></span></div>
+    <div class="row" data-opt="labels"><span>Labels on the 2D map</span><span class="switch on" style="margin-left:auto"></span></div></details>
+</aside>
+<div id="detail" class="glass"></div>
+<div id="zoom" class="glass"><button id="zin">+</button><button id="zout">−</button></div>
+<div id="mini" class="glass"><canvas width="440" height="440"></canvas></div>
+<div id="help" class="glass"></div><div id="progress" class="glass"></div><div id="tip" class="glass"></div>
 <script type="module" src="app.js"></script>
 </body></html>

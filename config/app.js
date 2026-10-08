@@ -59,18 +59,18 @@ $('#run').onclick = async () => {
 function counts(res) { const c = {}; res.rows.forEach(r => c[r[0]] = (c[r[0]] || 0) + 1); return c; }
 function draw() {
   const { results, unmatched, missing } = RESULT;
-  $('#out').innerHTML = `<div class="card"><h3>Summary</h3><table class="grid" id="files"><tr><th>File</th><th>Reference</th><th>Added</th><th>Sections added</th><th>Duplicates</th><th>Only in yours</th><th>Changed</th><th>Same text</th></tr>
+  $('#out').innerHTML = `<div class="glass card"><h3>Summary</h3><table class="grid" id="files"><tr><th>File</th><th>Reference</th><th>Added</th><th>Sections added</th><th>Duplicates</th><th>Only in yours</th><th>Changed</th><th>Same text</th></tr>
     ${results.map((r, i) => { const c = counts(r.res); return `<tr class="click" data-i="${i}"><td>${esc(r.path)}</td><td>${esc(r.ref)}</td><td class="${r.res.added ? 'ok' : ''}">${r.res.added}</td><td>${esc(r.res.sectionsAdded.join(', '))}</td>
       <td>${c['duplicate-in-custom'] || 0}</td><td>${c['only-in-custom'] || 0}</td><td>${c.changed || 0}</td><td>${c['same-text'] || 0}</td></tr>`; }).join('')}</table>
     ${RESULT.addedFiles.length ? `<p class="hint ok">Added ${RESULT.addedFiles.length} whole file(s) from the reference (untranslated): ${RESULT.addedFiles.map(esc).join(', ')}</p>`
-      : missing.length ? `<p class="hint">Reference files your config doesn't have (${missing.length}): ${missing.map(esc).join(', ')} - tick "also add whole files" to include them.</p>` : ''}
+      : missing.length ? `<p class="hint">Reference files your config doesn't have (${missing.length}): ${missing.map(esc).join(', ')} - turn on "Also add whole files" to include them.</p>` : ''}
     ${unmatched.length ? `<p class="hint">Your files without a reference (${unmatched.length}): ${unmatched.map(esc).join(', ')}</p>` : ''}
     <p class="hint">Click a file for its line-by-line list.</p></div>`;
   $('#files').querySelectorAll('tr.click').forEach(tr => tr.onclick = () => detail(+tr.dataset.i));
 }
 function detail(i) {
   const r = RESULT.results[i], rows = r.res.rows.slice().sort((a, b) => STATUS.indexOf(a[0]) - STATUS.indexOf(b[0]));
-  $('#detail').innerHTML = `<div class="card"><h3>${esc(r.path)}</h3>${r.notes.map(n => `<p class="hint">${esc(n)}</p>`).join('')}
+  $("#detail").innerHTML = `<div class="glass card"><h3>${esc(r.path)}</h3>${r.notes.map(n => `<p class="hint">${esc(n)}</p>`).join('')}
     <table class="grid"><tr><th>Status</th><th>Section</th><th>Key</th><th>Ref line</th><th>Your line</th><th>Reference text</th><th>Your text</th></tr>
     ${rows.slice(0, 5000).map(x => `<tr><td class="st-${x[0]}">${x[0]}</td><td>${esc(x[1])}</td><td>${esc(x[2])}</td><td>${x[3]}</td><td>${x[4]}</td><td class="v" title="${esc(x[5])}">${esc(x[5])}</td><td class="v" title="${esc(x[6])}">${esc(x[6])}</td></tr>`).join('')}</table>
     ${rows.length > 5000 ? `<p class="hint">first 5,000 of ${rows.length} rows</p>` : ''}</div>`;
