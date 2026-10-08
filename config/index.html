@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APB config merge</title><link rel="stylesheet" href="../assets/style.css">
+<style>
+  .steps{display:grid;grid-template-columns:1fr 1fr;gap:12px}.steps .card{margin:0}
+  .pick{display:flex;flex-direction:column;gap:6px}.pick label{display:flex;gap:6px;align-items:center}
+  #files tr.click{cursor:pointer}#files tr.click:hover td{background:#262a33}
+  #detail{max-height:60vh;overflow:auto}
+  .st-added{color:var(--ok)}.st-duplicate-in-custom,.st-only-in-custom{color:var(--bad)}.st-same-text{color:var(--dim)}
+  td.v{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style></head>
+<body>
+<header><h1>APB config merge</h1><nav><a href="../">Home</a><a class="active" href="./">Config merge</a><a href="../maps/">Map viewer</a></nav></header>
+<main class="page">
+  <p>Finds the lines your localisation config is missing compared to the game's own files, adds them at the right
+    places (in English, ready to translate) and gives you the merged config back as a zip, with a summary of what was
+    added to which file. Everything runs in your browser: your files are not uploaded anywhere.</p>
+  <div class="steps">
+    <div class="card pick"><h3>1. Reference (the game's lines)</h3>
+      <label>Game folder <code>APBGame/Localization/INT</code>: <input type="file" id="refdir" webkitdirectory multiple></label>
+      <label>…or a zip / files: <input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt"></label>
+      <label><input type="checkbox" id="useapbdb" checked> use <a href="https://apbdb.com" target="_blank">APBDB</a> for item names
+        (<code>InventoryItemTypes</code>) when the reference doesn't include it</label>
+      <span id="refinfo" class="hint">No reference chosen: only APBDB item names can be checked.</span></div>
+    <div class="card pick"><h3>2. Your config</h3>
+      <label>Config zip: <input type="file" id="cuszip" accept=".zip" multiple></label>
+      <label>…or a folder: <input type="file" id="cusdir" webkitdirectory multiple></label>
+      <label><input type="checkbox" id="mark"> mark added lines with a <code>; added from …</code> comment</label>
+      <label><input type="checkbox" id="addmissing"> also add whole files your config doesn't have (copied from the reference, untranslated)</label>
+      <span id="cusinfo" class="hint">Files are paired with the reference by name (e.g. <code>APBGame.GER</code> ↔ <code>APBGame.int</code>).</span></div>
+  </div>
+  <div style="margin:12px 0"><button id="run" class="primary">Compare</button> <button id="dlzip" disabled>Download merged config (.zip)</button>
+    <button id="dlsum" disabled>Download SUMMARY.md</button> <span id="status" class="dim"></span></div>
+  <div id="out"></div>
+  <div id="detail"></div>
+</main>
+<script type="module" src="app.js"></script>
+</body></html>

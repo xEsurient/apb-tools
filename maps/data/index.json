@@ -1,0 +1,178 @@
+{
+ "districts": [
+  {
+   "name": "APB_CustomisationSystems",
+   "file": "APB_CustomisationSystems.json",
+   "placements": 53,
+   "meshes": 2,
+   "with_mesh": 6,
+   "bounds": [
+    -20955.1,
+    -24876.8128,
+    28.672000000000025,
+    8366.536000000007
+   ],
+   "chunks": [
+    0
+   ]
+  },
+  {
+   "name": "AsylumDistrict",
+   "file": "AsylumDistrict.json",
+   "placements": 10978,
+   "meshes": 296,
+   "with_mesh": 1708,
+   "bounds": [
+    26453.1,
+    34150.8538,
+    76841.7424000006,
+    67818.00200000001
+   ],
+   "chunks": [
+    0
+   ]
+  },
+  {
+   "name": "FinancialDistrict",
+   "file": "FinancialDistrict.json",
+   "placements": 99297,
+   "meshes": 1616,
+   "with_mesh": 7792,
+   "bounds": [
+    70073.1,
+    63711.0696,
+    192842.3,
+    190648.41999999998
+   ],
+   "chunks": [
+    0
+   ]
+  },
+  {
+   "name": "PGBeaconDistrict",
+   "file": "PGBeaconDistrict.json",
+   "placements": 4933,
+   "meshes": 379,
+   "with_mesh": 1435,
+   "bounds": [
+    127742.1592,
+    104241.5616,
+    194470.12000000002,
+    164453.1
+   ],
+   "chunks": [
+    0
+   ]
+  },
+  {
+   "name": "PGCrateDistrict",
+   "file": "PGCrateDistrict.json",
+   "placements": 4600,
+   "meshes": 294,
+   "with_mesh": 642,
+   "bounds": [
+    65648.4738,
+    38958.5608,
+    189545.58399999968,
+    196242.3225999994
+   ],
+   "chunks": [
+    0
+   ]
+  },
+  {
+   "name": "RWorldSocialDistrict",
+   "file": "RWorldSocialDistrict.json",
+   "placements": 6764,
+   "meshes": 239,
+   "with_mesh": 428,
+   "bounds": [
+    11776.4,
+    16858.5,
+    49929.3,
+    62559.3
+   ],
+   "chunks": [
+    0,
+    1
+   ]
+  },
+  {
+   "name": "UIDistrict",
+   "file": "UIDistrict.json",
+   "placements": 2721,
+   "meshes": 175,
+   "with_mesh": 740,
+   "bounds": [
+    -7590.9,
+    -113082.59999999999,
+    71859.44399999948,
+    165174.1
+   ],
+   "chunks": [
+    0,
+    1
+   ]
+  },
+  {
+   "name": "WaterfrontDistrict",
+   "file": "WaterfrontDistrict.json",
+   "placements": 92964,
+   "meshes": 1352,
+   "with_mesh": 7304,
+   "bounds": [
+    84508.3968,
+    56616.7862,
+    183444.99939999994,
+    216801.33659999995
+   ],
+   "chunks": [
+    0,
+    1
+   ]
+  },
+  {
+   "name": "_TopLevel",
+   "file": "_TopLevel.json",
+   "placements": 124,
+   "meshes": 5,
+   "with_mesh": 5,
+   "bounds": [
+    0.0,
+    -11815.4,
+    175499.549,
+    176016.0
+   ],
+   "chunks": [
+    0,
+    1
+   ]
+  }
+ ],
+ "kinds": [
+  "Light",
+  "Volume",
+  "Beacon",
+  "Building",
+  "StaticMesh",
+  "Prop",
+  "Spawn",
+  "Vehicle",
+  "Path",
+  "Other"
+ ],
+ "colours": [
+  "#ffd65c",
+  "#5aa0ff",
+  "#ff5050",
+  "#c8c8c8",
+  "#969696",
+  "#78c878",
+  "#ff78dc",
+  "#ff963c",
+  "#5a5a5a",
+  "#aa78ff"
+ ],
+ "chunks": 2,
+ "building_lod": 1
+}
