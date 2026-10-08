@@ -5,7 +5,7 @@
 <style>
   html,body{overflow:hidden}
   #stage{position:fixed;inset:0}
-  #c2d,#c3d{position:absolute;inset:0;width:100%;height:100%}#c2d{cursor:grab}#c2d.drag{cursor:grabbing}
+  #c2d,#c3d{position:absolute;inset:0;width:100%;height:100%}#c3d{display:none}#c2d{cursor:grab}#c2d.drag{cursor:grabbing}
   .topbar{position:fixed;left:0;right:0;top:0;z-index:5;pointer-events:none}.topbar>*{pointer-events:auto}
   .search{flex:0 1 420px;position:relative;display:flex;align-items:center;gap:8px;padding:0 14px}
   .search input{flex:1;border:0;background:none;padding:11px 0}.search svg{color:var(--dim);flex:none}
@@ -32,6 +32,20 @@
   #progress{position:fixed;left:50%;top:90px;transform:translateX(-50%);padding:10px 16px;display:none;z-index:6}
   #tip{position:fixed;display:none;padding:5px 9px;font-size:12px;pointer-events:none;z-index:7;white-space:nowrap}
   #paneltoggle{display:none}
+  #missions{position:fixed;right:16px;top:84px;width:380px;max-height:calc(100vh - 100px);overflow:auto;padding:14px 16px;z-index:5;display:none}
+  body.mopen #missions{display:block}body.mopen #detail{right:412px}
+  #missions h4{margin:2px 0 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  #missions .x{position:absolute;right:10px;top:10px;border:0;background:none;color:var(--dim);padding:4px 8px}
+  #mq{width:100%;margin-bottom:8px}.mf{display:flex;gap:4px;margin-bottom:8px}.mf button{flex:1;justify-content:center;padding:5px 6px;font-size:12px}.mf button.on{border-color:var(--acc);color:var(--acc)}
+  .mi{padding:8px 10px;border-radius:9px;cursor:pointer;display:flex;gap:8px;align-items:center}.mi:hover{background:rgba(255,255,255,.05)}
+  .mi .t{flex:1;font-weight:600;font-size:13px}.mi small{color:var(--dim)}
+  .fac{font-size:10.5px;padding:2px 7px;border-radius:9px;font-weight:700;letter-spacing:.04em}.fac.f1{background:#2f5d8f;color:#dce9f7}.fac.f2{background:#8f3a2f;color:#f7e0dc}.fac.f3{background:#5a4f2a;color:#f3ead0}
+  .mhead .t{font-size:16px;font-weight:700;margin:2px 26px 4px 0}.mhead .meta{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+  .stage{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0;border-left:4px solid var(--sc)}
+  .stage .sh{display:flex;align-items:center;gap:8px;font-weight:600}.stage .num{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--sc);color:#111;font-size:12px;font-weight:800;flex:none}
+  .stage .sh .switch{margin-left:auto}.stage p{margin:6px 0 0;font-size:12.5px;color:#cfd2d8}.stage p b{color:var(--acc);font-weight:600}
+  .stage .kv{font-size:12px;color:var(--dim);margin-top:6px}
+  @media (max-width:760px){#missions{left:16px;right:16px;width:auto;top:auto;bottom:16px;max-height:55vh}body.mopen #detail{right:16px}}
   @media (max-width:760px){#panel{top:auto;bottom:16px;left:16px;right:16px;width:auto;max-height:45vh;display:none}#panel.open{display:block}#paneltoggle{display:inline-flex}
     #detail{left:16px;right:16px;width:auto;top:auto;bottom:16px}.search{flex:1 1 100%;order:5}#mini{width:150px;height:150px}}
 </style>
@@ -46,6 +60,7 @@
   <div class="glass chip">District <select id="district"></select></div>
   <div class="spacer"></div>
   <button class="glass" id="paneltoggle">Layers</button>
+  <button class="glass" id="mbtn">Missions</button>
   <div class="glass seg" id="modes"><button data-mode="2d" class="on">2D</button><button data-mode="3d">3D</button></div>
   <div class="glass seg" id="v3btns" style="display:none"><button id="btop">Top</button><button id="bover">Overview</button></div>
   <nav class="glass nav"><a href="../config/">Config merge</a></nav>
@@ -59,6 +74,13 @@
     <div class="row" data-opt="labels"><span>Labels on the 2D map</span><span class="switch on" style="margin-left:auto"></span></div></details>
 </aside>
 <div id="detail" class="glass"></div>
+<aside id="missions" class="glass"><button class="x" id="mx">✕</button>
+  <div id="mlist"><h4>Missions <span class="dim" id="mcount"></span></h4>
+    <input id="mq" placeholder="Search missions…" autocomplete="off">
+    <div class="mf" id="mfac"><button data-f="" class="on">All</button><button data-f="2">Criminal</button><button data-f="1">Enforcer</button><button data-f="3">Both</button></div>
+    <div id="mitems"></div><p class="hint">Mission data live from <a href="https://apbdb.com" target="_blank">APBDB</a>.</p></div>
+  <div id="mview" style="display:none"></div>
+</aside>
 <div id="zoom" class="glass"><button id="zin">+</button><button id="zout">−</button></div>
 <div id="mini" class="glass"><canvas width="440" height="440"></canvas></div>
 <div id="help" class="glass"></div><div id="progress" class="glass"></div><div id="tip" class="glass"></div>

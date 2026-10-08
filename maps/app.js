@@ -13,7 +13,9 @@ const ICON = {
   ammo: '<path d="M8 20V9l2-5 2 5v11zM14 20V9l2-5 2 5v11z" fill="currentColor"/>',
   beacon: '<path d="M12 21s-6-6-6-11a6 6 0 0 1 12 0c0 5-6 11-6 11zm0-9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor"/>',
   graffiti: '<path d="M9 3h4v4H9zM8 7h6v14H8zM16 4l3-1M16 7h3M16 10l3 1" fill="none" stroke="currentColor" stroke-width="2"/>',
-  task: '<circle cx="12" cy="12" r="5" fill="currentColor"/>',
+  spawn: '<path d="M12 2v5M9.5 4.5L12 7l2.5-2.5M5 21a7 7 0 0 1 14 0M12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="2"/>',
+  mission: '<path d="M6 21V3h11l-2.5 4.5L17 12H6" fill="currentColor"/>',
+  task: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
 };
 const LAYERS = [
   { id: 'contact', one: 'Contact', name: 'Contacts', cls: ['cContact'], col: '#f2a33a', on: true },
@@ -24,7 +26,9 @@ const LAYERS = [
   { id: 'ammo', one: 'Ammo vending machine', name: 'Ammo vending', cls: ['cAmmoVendingMachine'], col: '#e66a6a', on: false },
   { id: 'beacon', one: 'Location beacon', name: 'Location beacons', cls: ['cLocationBeaconActor'], col: '#ff8fc7', on: true },
   { id: 'graffiti', one: 'Graffiti point', name: 'Graffiti points', cls: ['cPlayerGraffitiDisplayPoint'], col: '#f7e26b', on: false },
-  { id: 'task', one: 'Mission / task spawn', name: 'Mission / task spawns', cls: ['cTaskItemSpawnZone', 'cPlayerCharacterMissionSpawnZone'], col: '#9aa0aa', on: false, dot: true },
+  { id: 'spawn', one: 'Player spawn point', name: 'Player spawn points', cls: ['cPlayerCharacterSpawnZone', 'PlayerStart'], col: '#58d6ff', on: false },
+  { id: 'mission', one: 'Mission spawn', name: 'Mission spawns', cls: ['cPlayerCharacterMissionSpawnZone'], col: '#ff7a45', on: false, small: true },
+  { id: 'task', one: 'Task item spawn', name: 'Task item spawns', cls: ['cTaskItemSpawnZone', 'cTaskTargetTaskItemSpawner'], col: '#d9dee6', on: false, small: true },
 ];
 const svg = (k, s = 15) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}">${ICON[k]}</svg>`;
 const FACTION = { kFACTION_Both: 'Both factions', kFACTION_Criminal: 'Criminal', kFACTION_Enforcer: 'Enforcer' };
@@ -86,6 +90,7 @@ async function loadDistrict(name) {
   $('#layers').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; r.querySelector('.switch').classList.toggle('on', S.layerOn[k]); draw2d(); V3.applyMarkers(); });
   $('#kinds').innerHTML = S.index.kinds.map((k, i) => kc[i] ? `<div class="row" data-k="${i}"><span class="swatch" style="background:${S.index.colours[i]}"></span>${esc(k)}<span class="n">${kc[i].toLocaleString()}</span><span class="switch on"></span></div>` : '').join('');
   $('#kinds').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.k; S.on[k] = !S.on[k]; r.querySelector('.switch').classList.toggle('on', S.on[k]); draw2d(); if (V3.ready) V3.applyKinds(); });
+  targetTypes(); missionMatches(); if (M.cur) drawMission();
   $('#detail').style.display = 'none'; fit2d(); draw2d(); progress('');
   history.replaceState(null, '', '#district=' + encodeURIComponent(name));
   if (S.mode === '3d') { await V3.build(); V3.builtFor = name; }
@@ -95,9 +100,9 @@ const C2 = { cx: 0, cy: 0, sc: 1, W: 0, H: 0 };
 const cv2 = $('#c2d');
 function resize2d() { const dpr = devicePixelRatio; C2.W = innerWidth; C2.H = innerHeight; cv2.width = C2.W * dpr; cv2.height = C2.H * dpr; cv2.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0); }
 function bounds() { return S.index.districts.find(d => d.name === S.name).bounds; }
-function fit2d() { resize2d(); const [x0, y0, x1, y1] = bounds(); C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 1), C2.H / Math.max(y1 - y0, 1)) * 0.86; }
+function fit2d() { resize2d(); const [x0, y0, x1, y1] = bounds(); C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 1), C2.H / Math.max(y1 - y0, 1)) * 0.86; C2.min = C2.sc / 4; }
 const sxy = i => [(S.d.x[i] - C2.cx) * C2.sc + C2.W / 2, (S.d.y[i] - C2.cy) * C2.sc + C2.H / 2];
-function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const wx = (mx - C2.W / 2) / C2.sc + C2.cx, wy = (my - C2.H / 2) / C2.sc + C2.cy; C2.sc *= f; C2.cx = wx - (mx - C2.W / 2) / C2.sc; C2.cy = wy - (my - C2.H / 2) / C2.sc; draw2d(); }
+function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const wx = (mx - C2.W / 2) / C2.sc + C2.cx, wy = (my - C2.H / 2) / C2.sc + C2.cy; C2.sc = Math.min(2, Math.max(C2.min || 0, C2.sc * f)); C2.cx = wx - (mx - C2.W / 2) / C2.sc; C2.cy = wy - (my - C2.H / 2) / C2.sc; draw2d(); }
 function centerOn(i) { C2.cx = S.d.x[i]; C2.cy = S.d.y[i]; C2.sc = Math.max(C2.sc, 0.06); draw2d(); }
 function visibleMarkers(W, H, tr, pad = 14) {
   const out = [], d = S.d;
@@ -121,7 +126,7 @@ function draw2d() {
   g.font = '600 11.5px Inter,system-ui,sans-serif'; g.textBaseline = 'middle';
   for (const [i, x0, y0, L] of ms) {
     let x = x0, y = y0;
-    if (LAYERS[L].dot) { g.fillStyle = LAYERS[L].col; g.globalAlpha = .7; g.fillRect(x - 2, y - 2, 4, 4); g.globalAlpha = 1; continue; }
+    if (LAYERS[L].small) { const img = S.icons[LAYERS[L].id], z = Math.max(12, sz * 0.62); if (img.complete) g.drawImage(img, x - z / 2, y - z / 2, z, z); continue; }
     for (let k = 0; k < 6 && placed.some(p => Math.abs(p[0] - x) < sz * 0.8 && Math.abs(p[1] - y) < sz * 0.8); k++) { x = x0 + Math.cos(k * 1.3) * sz * 0.9; y = y0 + Math.sin(k * 1.3) * sz * 0.9; }
     placed.push([x, y, i, L]); const img = S.icons[LAYERS[L].id]; if (img.complete) g.drawImage(img, x - sz / 2, y - sz / 2, sz, sz);
   }
@@ -133,7 +138,7 @@ function draw2d() {
     if (i !== S.sel && boxes.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
     boxes.push(box); g.fillStyle = 'rgba(15,17,21,.85)'; g.beginPath(); g.roundRect(bx, y - 10, w, 20, 6); g.fill(); g.fillStyle = '#e9e9ec'; g.fillText(t, bx + 6, y + 1);
   }
-  S.placed = placed;
+  S.placed = placed; drawMission2d(g, sxy, W, H);
   for (const i of S.hits) { const [x, y] = sxy(i); g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(x - 7, y - 7, 14, 14); }
   if (S.sel >= 0) { const [x, y] = sxy(S.sel); g.strokeStyle = '#f2a33a'; g.lineWidth = 2.5; g.shadowColor = '#f2a33a'; g.shadowBlur = 14; g.beginPath(); g.arc(x, y, 18, 0, 7); g.stroke(); g.shadowBlur = 0; }
   g.fillStyle = 'rgba(233,233,236,.45)'; g.font = '11px Inter,system-ui,sans-serif'; g.fillText(`1 px ≈ ${(1 / C2.sc / 100).toFixed(1)} m`, 16, H - 16);
@@ -181,7 +186,7 @@ function select(i) {
 }
 function nearby(i) {
   const d = S.d, c = {};
-  for (let j = 0; j < d.x.length; j++) { const L = S.layerOf[j]; if (L < 0 || j === i || LAYERS[L].dot) continue; if ((d.x[j] - d.x[i]) ** 2 + (d.y[j] - d.y[i]) ** 2 < 3000 ** 2) c[L] = (c[L] || 0) + 1; }
+  for (let j = 0; j < d.x.length; j++) { const L = S.layerOf[j]; if (L < 0 || j === i || LAYERS[L].small) continue; if ((d.x[j] - d.x[i]) ** 2 + (d.y[j] - d.y[i]) ** 2 < 3000 ** 2) c[L] = (c[L] || 0) + 1; }
   return Object.entries(c).map(([L, n]) => `${n} ${(n === 1 ? LAYERS[L].one : LAYERS[L].name).toLowerCase()}`).join(', ');
 }
 
@@ -311,7 +316,7 @@ const V3 = {
     const zs = Array.from(d.z).sort((a, b) => a - b), z0 = zs[Math.floor(zs.length * 0.05)] || 0, [x0, y0, x1, y1] = dist.bounds;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 40000, y1 - y0 + 40000), new THREE.MeshStandardMaterial({ color: 0x1f2227, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.set((x0 + x1) / 2, z0 - 60, (y0 + y1) / 2); this.scene.add(ground); this.groups.push(ground);
-    this.z0 = z0; this.ready = true; this.applyKinds(); this.buildMarkers();
+    this.z0 = z0; this.ready = true; this.applyKinds(); this.buildMarkers(); this.missionSprites();
     if (S.sel >= 0) this.flyTo(S.sel); else this.overview();
     progress(''); this.help();
   },
@@ -320,13 +325,27 @@ const V3 = {
     const mats = LAYERS.map(l => { const img = S.icons[l.id], c = document.createElement('canvas'); c.width = c.height = 64; c.getContext('2d').drawImage(img, 0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return new THREE.SpriteMaterial({ map: t, depthTest: false, fog: false, sizeAttenuation: false }); });
     const d = S.d;
     for (let i = 0; i < d.x.length; i++) {
-      const L = S.layerOf[i]; if (L < 0 || LAYERS[L].dot) continue;
-      const s = new THREE.Sprite(mats[L]); s.position.set(d.x[i], d.z[i] + 250, d.y[i]); s.scale.set(0.035, 0.035, 1); s.renderOrder = 10; s.userData.placement = i; s.userData.layer = L;
+      const L = S.layerOf[i]; if (L < 0) continue;
+      const s = new THREE.Sprite(mats[L]), k = LAYERS[L].small ? 0.024 : 0.035; s.position.set(d.x[i], d.z[i] + (LAYERS[L].small ? 120 : 250), d.y[i]); s.scale.set(k, k, 1); s.renderOrder = 10; s.userData.placement = i; s.userData.layer = L;
       this.scene.add(s); this.markers.push(s);
     }
     this.applyMarkers();
   },
   applyMarkers() { for (const s of this.markers) s.visible = S.layerOn[s.userData.layer]; },
+  missionSprites() {
+    if (!this.scene) return;
+    for (const s of this.msprites || []) this.scene.remove(s); this.msprites = [];
+    if (!this.ready || !M.cur) return;
+    const mats = {}, d = S.d;
+    const mat = k => { if (!mats[k]) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+      g.fillStyle = STAGE_COLS[k % STAGE_COLS.length]; g.strokeStyle = 'rgba(0,0,0,.65)'; g.lineWidth = 6; g.beginPath(); g.arc(32, 32, 27, 0, 7); g.fill(); g.stroke();
+      g.fillStyle = '#111'; g.font = '800 30px Inter,system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(k + 1), 32, 34);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; mats[k] = new THREE.SpriteMaterial({ map: t, depthTest: false, fog: false, sizeAttenuation: false }); } return mats[k]; };
+    for (const [i, k] of missionPoints()) {
+      const s = new THREE.Sprite(mat(k)); s.position.set(d.x[i], d.z[i] + 180, d.y[i]); s.scale.set(0.03, 0.03, 1); s.renderOrder = 12; s.userData.placement = i;
+      this.scene.add(s); this.msprites.push(s);
+    }
+  },
   clear() { for (const o of this.groups.concat(this.markers)) { this.scene.remove(o); o.geometry?.dispose(); } this.groups = []; this.markers = []; this.ready = false; },
   applyKinds() {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -344,7 +363,7 @@ const V3 = {
   mark(i) { if (!this.marker) return; const d = S.d; this.marker.position.set(d.x[i], d.z[i] + 40, d.y[i]); this.marker.visible = true; },
   pick(e) {
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), this.cam);
-    const sp = ray.intersectObjects(this.markers.filter(s => s.visible), false)[0]; if (sp) return select(sp.object.userData.placement);
+    const sp = ray.intersectObjects((this.msprites || []).concat(this.markers.filter(s => s.visible)), false)[0]; if (sp) return select(sp.object.userData.placement);
     const hit = ray.intersectObjects(this.groups.filter(g => g.isInstancedMesh), false)[0];
     if (hit && hit.instanceId !== undefined) select(hit.object.userData.placements[hit.instanceId]);
   },
@@ -362,10 +381,11 @@ const V3 = {
   miniBox() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); return [(x0 + x1) / 2 - s / 2, (y0 + y1) / 2 - s / 2, s]; },
   miniToWorld(fx, fy) { const [bx, by, s] = this.miniBox(); return [bx + fx * s, by + fy * s]; },
   drawMini() {
-    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join();
+    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + M.ver;
     if (this._miniKey !== key) {
       const tr = i => [(S.d.x[i] - bx) * sc, (S.d.y[i] - by) * sc]; drawScenery(g, W, W, tr, true);
-      for (const [, x, y, L] of visibleMarkers(W, W, tr)) { g.fillStyle = LAYERS[L].col; g.beginPath(); g.arc(x, y, LAYERS[L].dot ? 1.5 : 4, 0, 7); g.fill(); }
+      for (const [, x, y, L] of visibleMarkers(W, W, tr)) { g.fillStyle = LAYERS[L].col; g.beginPath(); g.arc(x, y, LAYERS[L].small ? 2 : 4, 0, 7); g.fill(); }
+      for (const [i, k] of missionPoints()) { const [x, y] = tr(i); g.fillStyle = STAGE_COLS[k % STAGE_COLS.length]; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); }
       this._miniImg = g.getImageData(0, 0, W, W); this._miniKey = key;
     } else g.putImageData(this._miniImg, 0, 0);
     const p = this.cam.position, x = (p.x - bx) * sc, y = (p.z - by) * sc, a = Math.atan2(-Math.cos(this.yaw), -Math.sin(this.yaw)), h = 0.45;
@@ -386,5 +406,100 @@ async function setMode(m, focus) {
   if (focus !== undefined) V3.flyTo(focus);
 }
 window.addEventListener('resize', () => { if (S.mode === '2d') { resize2d(); draw2d(); } else V3.resize(); });
-window.APB = { S, V3 };
+const API = 'https://api.apbdb.com/beacon/';
+const FACTION_ID = { 1: 'Enforcer', 2: 'Criminal', 3: 'Both' };
+const STAGE_COLS = ['#f2a33a', '#5aa9e6', '#7bd389', '#ff6f91', '#c38fff', '#4fd1c5', '#f7e26b', '#ff8a5c', '#9ad0ff', '#d4a5ff'];
+const M = { list: null, districts: null, cur: null, on: [], match: [], contacts: [], ver: 0, filter: '' };
+async function cachedJSON(url, key) {
+  try { const c = JSON.parse(sessionStorage.getItem(key) || 'null'); if (c) return c; } catch { }
+  const j = await getJSON(url); try { sessionStorage.setItem(key, JSON.stringify(j)); } catch { } return j;
+}
+function targetTypes() { S.tt = S.d.x.map((_, i) => info(i).eTaskTargetType || ''); }
+function briefHTML(t) { return esc(t || '').replace(/&lt;Col:[^&]*&gt;(.*?)&lt;\/Col&gt;/g, '<b>$1</b>').replace(/\r?\n/g, '<br>'); }
+function districtOf(eDistrict) {
+  const d = (M.districts || []).find(x => +x.id === +eDistrict); if (!d) return null;
+  const dm = String(d.sDistrictMap || '').toLowerCase().replace(/_master$/, ''), names = S.index.districts.map(x => x.name);
+  return names.find(n => n.toLowerCase() === dm) || names.find(n => dm.includes(n.toLowerCase().replace(/district$/, ''))) || null;
+}
+function stageMatches(st) {
+  const t = st.eTargetAllocation && st.eTargetAllocation.eTaskTargetType; if (!t || typeof t !== 'object') return [];
+  const row = t.sAPBDB || '', id = '#' + t.id, out = [];
+  for (let i = 0; i < S.tt.length; i++) { const v = S.tt[i]; if (v && (v === row || v === id || (v[0] !== '#' && row.startsWith(v + '_')))) out.push(i); }
+  return out;
+}
+function missionMatches() {
+  if (!M.cur) { M.match = []; M.contacts = []; return; }
+  M.match = M.cur.aStages.map(stageMatches);
+  const rows = new Set((M.cur.aContacts || []).map(c => c.eContact && c.eContact.sAPBDB).filter(Boolean));
+  M.contacts = []; for (let i = 0; i < S.d.x.length; i++) if (rows.has(info(i).eContact)) M.contacts.push(i);
+  M.ver++;
+}
+async function openMissions() {
+  document.body.classList.add('mopen');
+  if (M.list) return;
+  $('#mitems').innerHTML = '<p class="dim">Loading missions from APBDB…</p>';
+  try {
+    const [list, dists] = await Promise.all([cachedJSON(API + 'missions', 'apbdb-missions'), cachedJSON(API + 'districts', 'apbdb-districts')]);
+    M.list = list.missions.filter(m => m.bTest !== '1' && m.bDisabled !== '1').sort((a, b) => a.sMissionTitle.localeCompare(b.sMissionTitle)); M.districts = dists; drawMissionList();
+  } catch (e) { $('#mitems').innerHTML = `<p class="bad">Could not reach APBDB: ${esc(e.message)}</p>`; }
+}
+function drawMissionList() {
+  const q = $('#mq').value.trim().toLowerCase(), f = M.filter;
+  const items = M.list.filter(m => (!f || m.eFaction === f) && (!q || m.sMissionTitle.toLowerCase().includes(q) || m.sAPBDB.toLowerCase().includes(q)));
+  $('#mcount').textContent = `${items.length} / ${M.list.length}`;
+  $('#mitems').innerHTML = items.map(m => `<div class="mi" data-k="${esc(m.sAPBDB)}"><span class="fac f${m.eFaction}">${FACTION_ID[m.eFaction] || '?'}</span><span class="t">${esc(m.sMissionTitle)}</span><small>${m.nStages} stages</small></div>`).join('') || '<p class="dim">No missions match.</p>';
+  $('#mitems').querySelectorAll('.mi').forEach(el => el.onclick = () => selectMission(el.dataset.k));
+}
+async function selectMission(key) {
+  $('#mlist').style.display = 'none'; const v = $('#mview'); v.style.display = 'block'; v.innerHTML = '<p class="dim">Loading mission…</p>';
+  try { M.cur = await cachedJSON(API + 'missions/' + encodeURIComponent(key), 'apbdb-mission-' + key); } catch (e) { v.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
+  M.on = M.cur.aStages.map((_, k) => k === 0); missionMatches(); drawMission(); refreshMission();
+}
+function drawMission() {
+  const m = M.cur, v = $('#mview'), r = m.eRewardPackage || {};
+  const contacts = (m.aContacts || []).map(c => c.eContact).filter(c => c && typeof c === 'object');
+  const homes = [...new Set(contacts.map(c => districtOf(c.eDistrict)).filter(Boolean))];
+  const here = homes.includes(S.name);
+  v.innerHTML = `<div class="mhead"><a href="#" id="mback" class="hint">← All missions</a><div class="t">${esc(m.sMissionTitle)}</div>
+    <div class="meta"><span class="fac f${m.eFaction}">${FACTION_ID[m.eFaction] || '?'}</span><span class="tag">Group ${m.nGroupSizeMin}–${m.nGroupSizeMax}</span>
+      ${+m.nTakeoutCount ? `<span class="tag">${m.nTakeoutCount} takeouts to win</span>` : ''}${r.nBaseCash_0 ? `<span class="tag">$${(+r.nBaseCash_0).toLocaleString()}–${(+r.nBaseCash_1).toLocaleString()}</span>` : ''}
+      ${r.nBaseContactStanding_0 ? `<span class="tag">Standing ${r.nBaseContactStanding_0}–${r.nBaseContactStanding_1}</span>` : ''}</div>
+    <div class="kv" style="font-size:12.5px">Contacts: ${contacts.map(c => esc(c.sTitle)).join(', ') || '–'}${M.contacts.length ? ` · <a href="#" id="mcontact">show on map</a>` : ''}</div>
+    ${homes.length && !here ? `<p class="hint">Plays in ${homes.map(h => `<a href="#" data-go="${h}">${h.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')}</a>`).join(', ')}: switch district to see its target spots.</p>` : ''}</div>
+    ${m.aStages.map((st, k) => { const op = st.eOperation || {}, t = st.eTargetAllocation && st.eTargetAllocation.eTaskTargetType, c = STAGE_COLS[k % STAGE_COLS.length];
+      const reqs = [st.nTargetsRequired > 0 && `${st.nTargetsRequired} target(s)`, st.nTaskItemsRequired > 0 && `${st.nTaskItemsRequired} item(s)`, st.nVehiclesRequired > 0 && `${st.nVehiclesRequired} vehicle(s)`, st.nTimeLimit > 0 && `${Math.round(st.nTimeLimit / 60)} min limit`, +st.bIsOpposition && 'opposition stage', +st.bIsConcurrent && 'concurrent'].filter(Boolean);
+      return `<div class="stage" style="--sc:${c}"><div class="sh"><span class="num">${k + 1}</span>${esc(op.sUIDescription || 'Stage')}<span class="switch ${M.on[k] ? 'on' : ''}" data-s="${k}"></span></div>
+        <p>${briefHTML(st.sOwnerBrief !== 'None' ? st.sOwnerBrief : '') || '<span class="dim">No brief</span>'}</p>
+        ${st.sDispatchBrief && st.sDispatchBrief !== 'None' ? `<p class="dim" style="font-size:12px">Opposition: ${briefHTML(st.sDispatchBrief)}</p>` : ''}
+        <div class="kv">${t && typeof t === 'object' ? `Target: <b style="color:var(--text)">${esc(t.sDisplayName && t.sDisplayName !== 'None' ? t.sDisplayName : t.sAPBDB)}</b> · ` : ''}${M.match[k].length} possible spot(s) here${reqs.length ? ' · ' + reqs.join(' · ') : ''}</div></div>`; }).join('')}
+    <div style="display:flex;gap:8px;margin-top:10px"><button id="mfit">Show all spots</button><button id="mclear">Clear mission</button></div>`;
+  $('#mback').onclick = e => { e.preventDefault(); $('#mview').style.display = 'none'; $('#mlist').style.display = 'block'; };
+  v.querySelectorAll('[data-s]').forEach(sw => sw.onclick = () => { const k = +sw.dataset.s; M.on[k] = !M.on[k]; sw.classList.toggle('on', M.on[k]); M.ver++; refreshMission(); });
+  v.querySelectorAll('[data-go]').forEach(a => a.onclick = async e => { e.preventDefault(); $('#district').value = a.dataset.go; await loadDistrict(a.dataset.go); });
+  const mc = $('#mcontact'); if (mc) mc.onclick = e => { e.preventDefault(); const i = M.contacts[0]; select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i); };
+  $('#mfit').onclick = () => fitMission(); $('#mclear').onclick = () => { M.cur = null; missionMatches(); refreshMission(); $('#mview').style.display = 'none'; $('#mlist').style.display = 'block'; };
+}
+function missionPoints() { const out = []; if (!M.cur) return out; M.match.forEach((list, k) => { if (M.on[k]) for (const i of list) out.push([i, k]); }); return out; }
+function fitMission() {
+  const pts = missionPoints(); if (!pts.length) return; const d = S.d;
+  let x0 = 1e12, y0 = 1e12, x1 = -1e12, y1 = -1e12; for (const [i] of pts) { x0 = Math.min(x0, d.x[i]); x1 = Math.max(x1, d.x[i]); y0 = Math.min(y0, d.y[i]); y1 = Math.max(y1, d.y[i]); }
+  if (S.mode === '3d') { V3.cam.position.set((x0 + x1) / 2, (V3.z0 || 0) + Math.max(x1 - x0, y1 - y0) * 0.8 + 4000, (y0 + y1) / 2 + 2000); V3.yaw = 0; V3.pitch = -1.2; return; }
+  C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 1000), C2.H / Math.max(y1 - y0, 1000)) * 0.8; draw2d();
+}
+function refreshMission() { draw2d(); V3.missionSprites(); }
+function drawMission2d(g, tr, W, H) {
+  if (!M.cur) return;
+  g.lineWidth = 3; g.font = '800 10px Inter,system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [i, k] of missionPoints()) {
+    const [x, y] = tr(i); if (x < -12 || y < -12 || x > W + 12 || y > H + 12) continue; const c = STAGE_COLS[k % STAGE_COLS.length];
+    g.fillStyle = c; g.strokeStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.arc(x, y, 8, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#111'; g.fillText(String(k + 1), x, y + 0.5);
+  }
+  for (const i of M.contacts) { const [x, y] = tr(i); g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, 16, 0, 7); g.stroke(); }
+  g.textAlign = 'start';
+}
+$('#mbtn').onclick = () => document.body.classList.contains('mopen') ? document.body.classList.remove('mopen') : openMissions();
+$('#mx').onclick = () => document.body.classList.remove('mopen');
+$('#mq').oninput = () => M.list && drawMissionList();
+document.querySelectorAll('#mfac button').forEach(b => b.onclick = () => { M.filter = b.dataset.f; document.querySelectorAll('#mfac button').forEach(x => x.classList.toggle('on', x === b)); if (M.list) drawMissionList(); });
+window.APB = { S, V3, C2 };
 init().catch(e => { progress(''); status('failed: ' + e.message); });
