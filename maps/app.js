@@ -15,6 +15,7 @@ const ICON = {
   graffiti: '<path d="M9 3h4v4H9zM8 7h6v14H8zM16 4l3-1M16 7h3M16 10l3 1" fill="none" stroke="currentColor" stroke-width="2"/>',
   spawn: '<path d="M12 2v5M9.5 4.5L12 7l2.5-2.5M5 21a7 7 0 0 1 14 0M12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="2"/>',
   mission: '<path d="M6 21V3h11l-2.5 4.5L17 12H6" fill="currentColor"/>',
+  pumpkin: '<path d="M12 7c-1.2-.9-3-1.2-4.6-.6C4.6 7.4 3.5 10 3.8 13c.3 3.4 2.7 6 5.4 6 1 0 1.9-.3 2.8-.8.9.5 1.8.8 2.8.8 2.7 0 5.1-2.6 5.4-6 .3-3-.8-5.6-3.6-6.6-1.6-.6-3.4-.3-4.6.6z" fill="currentColor"/><path d="M12 7c0-1.6.6-3 2-4" fill="none" stroke="currentColor" stroke-width="2"/>',
   task: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
 };
 const LAYERS = [
@@ -29,13 +30,18 @@ const LAYERS = [
   { id: 'spawn', one: 'Player spawn point', name: 'Player spawn points', cls: ['cPlayerCharacterSpawnZone', 'PlayerStart'], col: '#58d6ff', on: false },
   { id: 'mission', one: 'Mission spawn', name: 'Mission spawns', cls: ['cPlayerCharacterMissionSpawnZone'], col: '#ff7a45', on: false, small: true },
   { id: 'task', one: 'Task item spawn', name: 'Task item spawns', cls: ['cTaskItemSpawnZone', 'cTaskTargetTaskItemSpawner'], col: '#d9dee6', on: false, small: true },
+  { id: 'pumpkinG', icon: 'pumpkin', one: 'Green pumpkin', name: 'Green pumpkins', cls: [], tt: 'PumpkinGreen', col: '#7ee05f', on: true, season: true, small: true },
+  { id: 'pumpkinP', icon: 'pumpkin', one: 'Purple pumpkin', name: 'Purple pumpkins', cls: [], tt: 'PumpkinPurple', col: '#b98cff', on: true, season: true, small: true },
+  { id: 'pumpkinR', icon: 'pumpkin', one: 'Red pumpkin', name: 'Red pumpkins', cls: [], tt: 'PumpkinRed', col: '#ff5a4f', on: true, season: true },
 ];
-const svg = (k, s = 15) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}">${ICON[k]}</svg>`;
+const SEASON = [[/Halloween_GreenPumpkin/i, 'Halloween: green pumpkin set'], [/Halloween_PurplePumpkin/i, 'Halloween: purple pumpkin set'], [/Halloween/i, 'Halloween'],
+  [/Christmas/i, 'Christmas'], [/Minigame_Epidemic/i, 'Epidemic minigame'], [/Minigame_ItemSpawn/i, 'Minigame item spawns'], [/Minigame/i, 'Minigames']];
+const svg = (k, s = 15) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}">${ICON[k] || ICON[LAYERS.find(l => l.id === k)?.icon]}</svg>`;
 const FACTION = { kFACTION_Both: 'Both factions', kFACTION_Criminal: 'Criminal', kFACTION_Enforcer: 'Enforcer' };
 const DROPOFF = { DropOff_Enf: 'Enforcer drop-off', DropOff_Crim: 'Criminal drop-off', SmallItemDropOff_Crim: 'Small item drop-off (Criminal)',
   MediumLargeItemDropOff_Crim: 'Medium/large item drop-off (Criminal)', VehicleDropOff_Crim: 'Vehicle drop-off (Criminal)', VehicleDropOff_Enf: 'Vehicle drop-off (Enforcer)' };
 
-const S = { index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1, 
+const S = { season: false, index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1, 
   mode: '2d', opt: { textures: true, labels: true, imagery: true }, icons: {} };
 
 function status(t) { $('#dname').textContent = t; }
@@ -53,7 +59,7 @@ function title(i) {
 function makeIcons() {
   const px = Math.round(28 * devicePixelRatio);
   for (const l of LAYERS) {
-    const s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 36 36" width="${px}" height="${px}"><circle cx="12" cy="12" r="16" fill="${l.col}" stroke="rgba(0,0,0,.55)" stroke-width="3"/><g color="#14161b">${ICON[l.id]}</g></svg>`;
+    const s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 36 36" width="${px}" height="${px}"><circle cx="12" cy="12" r="16" fill="${l.col}" stroke="rgba(0,0,0,.55)" stroke-width="3"/><g color="#14161b">${ICON[l.icon || l.id]}</g></svg>`;
     const img = new Image(); img.onload = () => draw2d(); img.src = 'data:image/svg+xml,' + encodeURIComponent(s); S.icons[l.id] = img;
   }
 }
@@ -84,9 +90,15 @@ async function loadDistrict(name) {
   LAYERS.forEach((l, k) => l.cls.forEach(c => { const i = d.classes.indexOf(c); if (i >= 0) byCls.set(i, k); }));
   S.layerOf = new Int8Array(n).fill(-1); S.counts = LAYERS.map(() => 0);
   for (let i = 0; i < n; i++) { const k = byCls.get(d.cls[i]); if (k !== undefined) { S.layerOf[i] = k; S.counts[k]++; } }
+  const byTT = new Map(LAYERS.map((l, k) => [l.tt, k]).filter(x => x[0]));
+  for (const [i, v] of Object.entries(d.info)) { const m = /eTaskTargetType=(\S+)/.exec(v), k = m ? byTT.get(m[1]) : undefined; if (k !== undefined) { if (S.layerOf[i] >= 0) S.counts[S.layerOf[i]]--; S.layerOf[i] = k; S.counts[k]++; } }
+  S.sgroup = d.maps.map(m => { const g = SEASON.find(([re]) => re.test(m)); return g ? g[1] : ''; });
+  S.groups = [...new Set(S.sgroup.filter(Boolean))].map(g => [g, 0]); const gi = new Map(S.groups.map(([g], k) => [g, k]));
+  S.gidx = new Int8Array(n).fill(-1); for (let i = 0; i < n; i++) { const g = S.sgroup[d.map[i]]; if (g) { S.gidx[i] = gi.get(g); S.groups[S.gidx[i]][1]++; } }
+  S.groupOn = S.groups.map(([g]) => S.groupWant?.[g] ?? !/purple/i.test(g)); S.hid = new Uint8Array(n); applySeason(false); seasonPanel();
   status($('#district').selectedOptions[0]?.text || name);
   const kc = S.index.kinds.map(() => 0); d.kind.forEach(k => kc[k]++); S.on = S.index.kinds.map(() => true);
-  $('#layers').innerHTML = LAYERS.map((l, k) => S.counts[k] ? `<div class="row" data-l="${k}" style="--c:${l.col}"><div class="ic">${svg(l.id)}</div>${l.name}<span class="n">${S.counts[k].toLocaleString()}</span><span class="switch ${S.layerOn[k] ? 'on' : ''}"></span></div>` : '').join('');
+  $('#layers').innerHTML = LAYERS.map((l, k) => S.counts[k] && !l.season ? `<div class="row" data-l="${k}" style="--c:${l.col}"><div class="ic">${svg(l.id)}</div>${l.name}<span class="n">${S.counts[k].toLocaleString()}</span><span class="switch ${S.layerOn[k] ? 'on' : ''}"></span></div>` : '').join('');
   $('#layers').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; r.querySelector('.switch').classList.toggle('on', S.layerOn[k]); draw2d(); V3.applyMarkers(); });
   $('#kinds').innerHTML = S.index.kinds.map((k, i) => kc[i] ? `<div class="row" data-k="${i}"><span class="swatch" style="background:${S.index.colours[i]}"></span>${esc(k)}<span class="n">${kc[i].toLocaleString()}</span><span class="switch on"></span></div>` : '').join('');
   $('#kinds').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.k; S.on[k] = !S.on[k]; r.querySelector('.switch').classList.toggle('on', S.on[k]); draw2d(); if (V3.ready) V3.applyKinds(); });
@@ -95,6 +107,30 @@ async function loadDistrict(name) {
   if (S.mode === '2d' && S.opt.imagery) imagery();
   history.replaceState(null, '', '#district=' + encodeURIComponent(name));
   if (S.mode === '3d') { await V3.build(); V3.builtFor = name; }
+}
+
+function applySeason(redraw = true) {
+  const d = S.d; for (let i = 0; i < d.x.length; i++) S.hid[i] = S.gidx[i] >= 0 && !(S.season && S.groupOn[S.gidx[i]]) ? 1 : 0;
+  if (!redraw) return; draw2d(); if (V3.ready) { V3.applyKinds(); V3.buildMarkers(); }
+}
+function seasonPanel() {
+  const el = $('#seasonal'); el.style.display = S.groups.length ? '' : 'none'; if (!S.groups.length) return;
+  const row = (attr, on, body, n) => `<div class="row" ${attr}>${body}<span class="n">${n.toLocaleString()}</span><span class="switch ${on ? 'on' : ''}"></span></div>`;
+  $('#season').innerHTML = row('data-s="all"', S.season, '<b>Show seasonal content</b>', S.groups.reduce((a, g) => a + g[1], 0))
+    + `<div class="${S.season ? '' : 'off'}" id="sgroups">` + S.groups.map(([g, n], k) => row(`data-s="${k}"`, S.groupOn[k], `<span class="swatch" style="background:#f2a33a"></span>${esc(g)}`, n)).join('')
+    + LAYERS.map((l, k) => l.season && S.counts[k] ? row(`data-l="${k}"`, S.layerOn[k], `<div class="ic" style="--c:${l.col}">${svg(l.id)}</div>${l.name}`, S.counts[k]) : '').join('') + '</div>';
+  $('#season').querySelectorAll('.row').forEach(r => r.onclick = () => {
+    if (r.dataset.l !== undefined) { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; seasonPanel(); draw2d(); V3.applyMarkers(); return; }
+    if (r.dataset.s === 'all') S.season = !S.season; else { const k = +r.dataset.s; S.groupOn[k] = !S.groupOn[k]; S.groupWant = { ...S.groupWant, [S.groups[k][0]]: S.groupOn[k] }; }
+    seasonPanel(); applySeason();
+  });
+}
+function reveal(list) {
+  const arr = [...list], shown = i => S.gidx[i] < 0 || (S.season && S.groupOn[S.gidx[i]]);
+  if (!arr.length || arr.some(shown)) return;
+  S.season = true;
+  if (!arr.some(shown)) { const gs = [...new Set(arr.map(i => S.gidx[i]))]; S.groupOn[gs.find(g => !/purple/i.test(S.groups[g][0])) ?? gs[0]] = true; }
+  seasonPanel(); applySeason();
 }
 
 const C2 = { cx: 0, cy: 0, sc: 1, W: 0, H: 0 };
@@ -107,7 +143,7 @@ function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const wx = (mx - C2.W / 2) / 
 function centerOn(i) { C2.cx = S.d.x[i]; C2.cy = S.d.y[i]; C2.sc = Math.max(C2.sc, 0.06); draw2d(); }
 function visibleMarkers(W, H, tr, pad = 14) {
   const out = [], d = S.d;
-  for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L < 0 || !S.layerOn[L]) continue; const [x, y] = tr(i); if (x > -pad && y > -pad && x < W + pad && y < H + pad) out.push([i, x, y, L]); }
+  for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L < 0 || !S.layerOn[L] || S.hid[i]) continue; const [x, y] = tr(i); if (x > -pad && y > -pad && x < W + pad && y < H + pad) out.push([i, x, y, L]); }
   return out;
 }
 function drawScenery(g, W, H, tr, small) {
@@ -116,7 +152,7 @@ function drawScenery(g, W, H, tr, small) {
   const order = [7, 8, 9, 1, 0, 6, 4, 5, 3, 2];
   for (const k of order) {
     if (!S.on[k]) continue; g.fillStyle = S.index.colours[k]; g.globalAlpha = k === 3 ? 0.85 : 0.55; const s = small ? 1 : k === 3 ? 3 : 2;
-    for (let i = 0; i < n; i++) { if (d.kind[i] !== k || S.layerOf[i] >= 0) continue; const [x, y] = tr(i); if (x < -3 || y < -3 || x > W + 3 || y > H + 3) continue; g.fillRect(x - s / 2, y - s / 2, s, s); }
+    for (let i = 0; i < n; i++) { if (d.kind[i] !== k || S.layerOf[i] >= 0 || S.hid[i]) continue; const [x, y] = tr(i); if (x < -3 || y < -3 || x > W + 3 || y > H + 3) continue; g.fillRect(x - s / 2, y - s / 2, s, s); }
   }
   g.globalAlpha = 1;
 }
@@ -156,7 +192,7 @@ function draw2dNow() {
 function pick2d(mx, my) {
   for (const [x, y, i] of (S.placed || []).slice().reverse()) if ((x - mx) ** 2 + (y - my) ** 2 < 14 ** 2) return i;
   let best = -1, bd = 7 * 7; const d = S.d;
-  for (let i = 0; i < d.x.length; i++) { if (!S.on[d.kind[i]] || S.layerOf[i] >= 0) continue; const [x, y] = sxy(i), dd = (x - mx) ** 2 + (y - my) ** 2; if (dd < bd) { bd = dd; best = i; } }
+  for (let i = 0; i < d.x.length; i++) { if (!S.on[d.kind[i]] || S.layerOf[i] >= 0 || S.hid[i]) continue; const [x, y] = sxy(i), dd = (x - mx) ** 2 + (y - my) ** 2; if (dd < bd) { bd = dd; best = i; } }
   return best;
 }
 let drag = null, moved = false;
@@ -196,13 +232,14 @@ function select(i) {
 }
 function nearby(i) {
   const d = S.d, c = {};
-  for (let j = 0; j < d.x.length; j++) { const L = S.layerOf[j]; if (L < 0 || j === i || LAYERS[L].small) continue; if ((d.x[j] - d.x[i]) ** 2 + (d.y[j] - d.y[i]) ** 2 < 3000 ** 2) c[L] = (c[L] || 0) + 1; }
+  for (let j = 0; j < d.x.length; j++) { const L = S.layerOf[j]; if (L < 0 || j === i || LAYERS[L].small || S.hid[j]) continue; if ((d.x[j] - d.x[i]) ** 2 + (d.y[j] - d.y[i]) ** 2 < 3000 ** 2) c[L] = (c[L] || 0) + 1; }
   return Object.entries(c).map(([L, n]) => `${n} ${(n === 1 ? LAYERS[L].one : LAYERS[L].name).toLowerCase()}`).join(', ');
 }
 
 const pretty = k => k.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
 function propKey(i) {
-  const d = S.d, a = info(i).arch;
+  const d = S.d, a = info(i).arch, L = S.layerOf[i];
+  if (L >= 0 && LAYERS[L].tt) return LAYERS[L].one;
   if (d.mesh[i] < 0 && d.classes[d.cls[i]] !== 'cProp') return '';
   if (a) { const k = a.replace(/_?\d*Arc\d+$/, '').replace(/_+$/, '').replace(/_Prop$/i, ''); if (k) return k; }
   const m = d.mesh[i] >= 0 && S.meshes ? S.meshes[d.mesh[i]].name : '';
@@ -218,7 +255,7 @@ function hitBounds() {
   return [x0, y0, x1, y1];
 }
 function showHits(set, label) {
-  S.hits = set; S.hitLabel = label; const chip = $('#hitchip');
+  reveal(set); if (S.hid && [...set].some(i => !S.hid[i])) set = new Set([...set].filter(i => !S.hid[i])); S.hits = set; S.hitLabel = label; const chip = $('#hitchip');
   chip.style.display = set.size && label ? 'flex' : 'none';
   if (set.size && label) chip.innerHTML = `<b>${esc(label)}</b><span class="dim">${set.size.toLocaleString()} shown</span><button id="hitx">✕</button>`;
   const hx = $('#hitx'); if (hx) hx.onclick = () => { $('#search').value = ''; showHits(new Set(), ''); };
@@ -262,7 +299,7 @@ function setupSearch() {
     box.style.display = 'none';
     if (el.dataset.m !== undefined) { const m = +el.dataset.m; inp.value = S.meshes[m].name; showHits(usesOf(m), S.meshes[m].name); return; }
     if (el.dataset.g !== undefined) { const k = el.dataset.g, set = new Set(); S.props.forEach((v, i) => { if (v === k) set.add(i); }); inp.value = pretty(k); showHits(set, pretty(k)); return; }
-    const i = +el.dataset.i; showHits(new Set(), ''); select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i);
+    const i = +el.dataset.i; showHits(new Set(), ''); reveal([i]); select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i);
   };
   inp.oninput = run; inp.onfocus = run; inp.onblur = () => setTimeout(() => box.style.display = 'none', 150);
   inp.onkeydown = e => {
@@ -395,7 +432,7 @@ const V3 = {
     this.markers = this.drop(this.markers);
     if (!this.layerTex) this.layerTex = LAYERS.map(l => this.icon(g => g.drawImage(S.icons[l.id], 0, 0, 64, 64)));
     const per = LAYERS.map(() => []), d = S.d;
-    for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L >= 0) per[L].push(i); }
+    for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L >= 0 && !S.hid[i]) per[L].push(i); }
     per.forEach((list, L) => { if (!list.length) return; const p = this.points(list, LAYERS[L].small ? 120 : 250, this.layerTex[L], LAYERS[L].small ? 20 : 30, 10); p.userData.layer = L; this.markers.push(p); });
     this.applyMarkers();
   },
@@ -422,7 +459,7 @@ const V3 = {
   clear() { for (const o of this.groups) { this.scene.remove(o); o.geometry?.dispose(); } this.groups = []; this.markers = this.drop(this.markers); this.hsprites = this.drop(this.hsprites); this.msprites = this.drop(this.msprites); this.ready = false; },
   applyKinds() {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (const im of this.groups) { if (!im.isInstancedMesh) continue; im.userData.placements.forEach((pi, k) => im.setMatrixAt(k, S.on[S.d.kind[pi]] ? ueMatrix(pi) : zero)); im.instanceMatrix.needsUpdate = true; }
+    for (const im of this.groups) { if (!im.isInstancedMesh) continue; im.userData.placements.forEach((pi, k) => im.setMatrixAt(k, S.on[S.d.kind[pi]] && !S.hid[pi] ? ueMatrix(pi) : zero)); im.instanceMatrix.needsUpdate = true; }
   },
   flyTo(i) { const d = S.d; this.cam.position.set(d.x[i] - 4000, d.z[i] + 4500, d.y[i] + 4000); this.lookAt(d.x[i], d.z[i], d.y[i]); this.mark(i); },
   overview() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); this.cam.position.set((x0 + x1) / 2, (this.z0 || 0) + s * 0.35, (y0 + y1) / 2 + s * 0.45); this.yaw = 0; this.pitch = -0.6; },
@@ -476,7 +513,7 @@ const V3 = {
   miniBox() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); return [(x0 + x1) / 2 - s / 2, (y0 + y1) / 2 - s / 2, s]; },
   miniToWorld(fx, fy) { const [bx, by, s] = this.miniBox(); return [bx + fx * s, by + fy * s]; },
   drawMini() {
-    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + M.ver + '|' + S.hits.size + (S.hitLabel || '');
+    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + S.season + S.groupOn.join() + M.ver + '|' + S.hits.size + (S.hitLabel || '');
     if (this._miniKey !== key) {
       const tr = i => [(S.d.x[i] - bx) * sc, (S.d.y[i] - by) * sc]; drawScenery(g, W, W, tr, true);
       for (const [, x, y, L] of visibleMarkers(W, W, tr)) { g.fillStyle = LAYERS[L].col; g.beginPath(); g.arc(x, y, LAYERS[L].small ? 2 : 4, 0, 7); g.fill(); }
