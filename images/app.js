@@ -65,14 +65,14 @@ const st = { tab: 'images', group: null, q: '', shown: PAGE, sel: null, name: nu
 const opt = Object.assign({ anim: false, resize: true, xl: 16, yl: 16, lock: true, target: 'ui', tint: false, colour: '#ffffff', alpha: 1, bg: 'dark' }, store('opt') || {});
 const save = () => store('opt', opt);
 
-function sprite(cs, size) {
-  const k = size / A.cell, el = document.createElement('div');
+function sprite(cs, size, h = size) {
+  const kx = size / A.cell, ky = h / A.cell, el = document.createElement('div');
   el.className = 'sprite';
-  el.style.width = el.style.height = size + 'px';
+  el.style.width = size + 'px'; el.style.height = h + 'px';
   const layers = cs.slice().reverse();
   el.style.backgroundImage = layers.map(() => `url(${A.file})`).join(',');
-  el.style.backgroundSize = layers.map(() => `${A.w * k}px ${A.h * k}px`).join(',');
-  el.style.backgroundPosition = layers.map(([r, c]) => `${-(c - 1) * size}px ${-(r - 1) * size}px`).join(',');
+  el.style.backgroundSize = layers.map(() => `${A.w * kx}px ${A.h * ky}px`).join(',');
+  el.style.backgroundPosition = layers.map(([r, c]) => `${-(c - 1) * size}px ${-(r - 1) * h}px`).join(',');
   return el;
 }
 const animOf = (x) => (x.kind === 'img' ? x.anim : x.kind === 'tex' ? x.img?.anim : null);
@@ -183,6 +183,7 @@ function showPreview() {
   const p = $('#dprev'), an = animOf(x);
   p.className = 'bg-' + opt.bg; p.replaceChildren(preview(x, 128, st.play));
   $('#dplay').hidden = !an;
+  sizePreview();
   $('#dplay').textContent = st.play ? '❚❚ Pause' : '▶ Play';
 }
 
@@ -222,8 +223,31 @@ function select(x) {
   renderGrid();
   update();
 }
+function sizePreview() {
+  const x = st.sel, box = $('#dprev'), cap = $('#dsize'); if (!x) return;
+  let el = box.firstElementChild;
+  if (!el || el.classList.contains('noimg')) { cap.textContent = ''; return; }
+  const [nw, nh] = nativeSize(x);
+  const tw = opt.resize ? Math.abs(+opt.xl || 0) : nw, th = opt.resize ? Math.abs(+opt.yl || 0) : nh;
+  const k = Math.min(8, (box.clientWidth - 24) / Math.max(tw, 1), 260 / Math.max(th, 1));
+  const w = Math.max(tw * k, tw ? 1 : 0), h = Math.max(th * k, th ? 1 : 0);
+  if (el.classList.contains('sprite')) { el = sprite(x.cells, w, h); box.replaceChildren(el); }
+  else { el.style.width = w + 'px'; el.style.height = h + 'px'; }
+  const txt = [opt.resize ? `Shown as XL=${num(opt.xl)} YL=${num(opt.yl)}` : `Native size ${nw}×${nh}`];
+  if (tw && th && k !== 1) txt.push(`scaled ×${num(k.toFixed(2))} to fit`);
+  if (!tw || !th) txt.push(`${!tw ? 'XL' : 'YL'}=0: nothing is drawn at this size`);
+  else if (nw && nh) {
+    const st2 = (tw / th) / (nw / nh);
+    if (st2 > 1.02) txt.push(`stretched ${num(st2.toFixed(2))}× wide`);
+    else if (st2 < 0.98) txt.push(`stretched ${num((1 / st2).toFixed(2))}× tall`);
+    else txt.push('native proportions');
+  }
+  if (opt.resize && (+opt.xl < 0 || +opt.yl < 0)) txt.push('negative values draw at their absolute size');
+  cap.textContent = txt.join(' · ');
+}
 function update() {
   applyTint();
+  sizePreview();
   const x = st.sel; if (!x) return;
   const ui = x.kind === 'img' || opt.target === 'ui';
   $('#colourrow').hidden = !ui;
