@@ -1,24 +1,26 @@
 const $ = (s) => document.querySelector(s);
 const PAGE = 300;
+const ANIMGROUP = '*animated';
 const store = (k, v) => (v === undefined ? JSON.parse(localStorage.getItem('apbimg.' + k) ?? 'null') : localStorage.setItem('apbimg.' + k, JSON.stringify(v)));
 
 const cat = await (await fetch('data/catalog.json')).json();
 const IMGIDX = fetch('data/img_index.json').then((r) => r.json()), IMGBUF = {}, IMGURL = new Map();
-async function imgUrl(pkg, i) {
-  const key = pkg + '/' + i;
+async function imgUrl(dir, pkg, i) {
+  const key = dir + '/' + pkg + '/' + i;
   if (!IMGURL.has(key)) IMGURL.set(key, (async () => {
     const e = (await IMGIDX)[key]; if (!e) return '';
-    const [k, off, len] = e;
-    if (!IMGBUF[k]) IMGBUF[k] = fetch(`data/img_${k}.bin`).then((r) => r.arrayBuffer());
-    return URL.createObjectURL(new Blob([(await IMGBUF[k]).slice(off, off + len)], { type: 'image/webp' }));
+    const [f, off, len] = e;
+    if (!IMGBUF[f]) IMGBUF[f] = fetch('data/' + f).then((r) => r.arrayBuffer());
+    return URL.createObjectURL(new Blob([(await IMGBUF[f]).slice(off, off + len)], { type: 'image/webp' }));
   })());
   return IMGURL.get(key);
 }
 const A = cat.atlas;
+const ANIM = cat.anim || {};
 
 const images = [];
 for (const [pkg, rows] of Object.entries(cat.packages))
-  rows.forEach((r, i) => images.push({ kind: 'img', pkg, i, path: pkg + '.' + r[0], cls: r[1], w: r[2], h: r[3], has: r[4], from: r[5] }));
+  rows.forEach((r, i) => images.push({ kind: 'img', pkg, i, path: pkg + '.' + r[0], cls: r[1], w: r[2], h: r[3], has: r[4], from: r[5], anim: ANIM[pkg]?.[i] }));
 const imgAt = (pkg, i) => images.find((x) => x.pkg === pkg && x.i === i);
 const hudtex = cat.hudtex.map(([name, src, ref, how]) => ({ kind: 'tex', name, src, img: ref ? imgAt(ref[0], ref[1]) : null, how, group: name.split('_')[0] }));
 const hudicon = cat.hudicon.map(([name, cells, changed]) => ({ kind: 'icon', name, cells, changed }));
@@ -60,7 +62,7 @@ const TABS = {
 };
 
 const st = { tab: 'images', group: null, q: '', shown: PAGE, sel: null, name: null };
-const opt = Object.assign({ resize: true, xl: 16, yl: 16, lock: true, target: 'ui', tint: false, colour: '#ffffff', alpha: 1, bg: 'dark' }, store('opt') || {});
+const opt = Object.assign({ anim: false, resize: true, xl: 16, yl: 16, lock: true, target: 'ui', tint: false, colour: '#ffffff', alpha: 1, bg: 'dark' }, store('opt') || {});
 const save = () => store('opt', opt);
 
 function sprite(cs, size) {
@@ -73,15 +75,17 @@ function sprite(cs, size) {
   el.style.backgroundPosition = layers.map(([r, c]) => `${-(c - 1) * size}px ${-(r - 1) * size}px`).join(',');
   return el;
 }
-function imgEl(x) {
+const animOf = (x) => (x.kind === 'img' ? x.anim : x.kind === 'tex' ? x.img?.anim : null);
+function imgEl(x, play) {
   if (!x || !x.has) { const d = document.createElement('div'); d.className = 'noimg'; d.textContent = 'no picture'; return d; }
   const im = new Image(); im.loading = 'lazy'; im.decoding = 'async'; im.alt = x.path;
-  imgUrl(x.pkg, x.i).then((u) => { if (u) im.src = u; });
+  play = !!(play && x.anim);
+  imgUrl(play ? 'anim' : 'img', x.pkg, x.i).then((u) => { if (u) im.src = u; });
   return im;
 }
-function preview(x, size) {
-  if (x.kind === 'img') return imgEl(x);
-  if (x.kind === 'tex') return imgEl(x.img);
+function preview(x, size, play) {
+  if (x.kind === 'img') return imgEl(x, play);
+  if (x.kind === 'tex') return imgEl(x.img, play);
   if (!x.cells.length) { const d = document.createElement('div'); d.className = 'noimg'; d.textContent = 'atlas cell unknown'; return d; }
   return sprite(x.cells, size);
 }
@@ -125,6 +129,7 @@ function filtered() {
   const T = TABS[st.tab], words = st.q.toLowerCase().split(/\s+/).filter(Boolean);
   let l = T.list;
   if (words.length) l = l.filter((x) => { const s = (x.name + ' ' + (x.names || []).join(' ') + ' ' + (x.src || '')).toLowerCase(); return words.every((w) => s.includes(w)); });
+  else if (T.groups && st.group === ANIMGROUP) l = l.filter(animOf);
   else if (T.groups && st.group) l = l.filter((x) => x.group === st.group);
   return l;
 }
@@ -136,6 +141,13 @@ function renderSide() {
   for (const x of T.list) counts.set(x.group, (counts.get(x.group) || 0) + 1);
   const f = $('#pkgfilter').value.toLowerCase(), ul = $('#pkgs');
   ul.replaceChildren();
+  const na = T.list.filter(animOf).length;
+  if (na && (!f || 'animated'.includes(f))) {
+    const li = document.createElement('li'); li.className = 'animgroup' + (st.group === ANIMGROUP ? ' on' : '');
+    li.innerHTML = `<span>▶ Animated</span><small>${na}</small>`;
+    li.onclick = () => { st.group = ANIMGROUP; st.q = ''; $('#search').value = ''; st.shown = PAGE; render(); };
+    ul.append(li);
+  }
   for (const [g, n] of [...counts].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (f && !g.toLowerCase().includes(f)) continue;
     const li = document.createElement('li');
@@ -151,12 +163,12 @@ function renderGrid() {
   grid.replaceChildren();
   for (const x of l.slice(0, st.shown)) {
     const c = document.createElement('div'); c.className = 'card' + (x === st.sel ? ' sel' : '');
-    const pic = document.createElement('div'); pic.className = 'pic bg-' + opt.bg; pic.append(preview(x, 64));
+    const pic = document.createElement('div'); pic.className = 'pic bg-' + opt.bg; pic.append(preview(x, 64, opt.anim));
     const nm = document.createElement('div'); nm.className = 'name';
     nm.textContent = x.kind === 'img' ? x.path.slice(x.pkg.length + 1) : x.kind === 'cell' ? (x.names[0] || x.name) : x.name;
     c.title = x.kind === 'cell' ? `${x.name}: ${x.names.join(', ') || 'no known name'}` : x.name;
     c.append(pic, nm);
-    const badge = x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : x.how === 'guessed' || x.guessed ? 'guessed' : x.changed ? 'changed' : '';
+    const badge = animOf(x) ? '▶ animated' : x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : x.how === 'guessed' || x.guessed ? 'guessed' : x.changed ? 'changed' : '';
     if (badge) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = badge; c.append(b); }
     c.onclick = () => select(x);
     c.ondblclick = async () => { select(x); if (await copy(lineFor(x))) flash('Copied'); };
@@ -166,17 +178,28 @@ function renderGrid() {
 }
 function render() { renderSide(); renderGrid(); writeHash(); }
 
+function showPreview() {
+  const x = st.sel; if (!x) return;
+  const p = $('#dprev'), an = animOf(x);
+  p.className = 'bg-' + opt.bg; p.replaceChildren(preview(x, 128, st.play));
+  $('#dplay').hidden = !an;
+  $('#dplay').textContent = st.play ? '❚❚ Pause' : '▶ Play';
+}
+
 function select(x) {
   st.sel = x; st.name = x.kind === 'cell' ? x.names[0] || null : null;
   document.querySelectorAll('.card.sel').forEach((e) => e.classList.remove('sel'));
   $('#detail').hidden = false;
-  const p = $('#dprev'); p.className = 'bg-' + opt.bg; p.replaceChildren(preview(x, 128));
+  st.play = opt.anim; showPreview();
   $('#dname').textContent = x.kind === 'img' ? x.path : x.name;
   const meta = [];
   if (x.kind === 'img') {
     meta.push(['Class', x.cls], ['Size', x.has ? `${x.w}×${x.h}` : '—']);
     if (x.from) meta.push(['Preview', `texture ${x.from} (the material may animate or tint differently in game)`]);
+    if (x.anim) meta.push(['Animation', `${x.anim[1] >= 10000 ? Math.round(x.anim[1] / 1000) : (x.anim[1] / 1000).toFixed(2)} s loop, ${x.anim[0]} frames, ` +
+      (x.cls === 'TextureFlipBook' ? 'flipbook cells at its frame rate' : 'rendered from the material\'s node graph (an approximation: the game may differ)')]);
   } else if (x.kind === 'tex') {
+    if (x.img?.anim) meta.push(['Animation', `${(x.img.anim[1] / 1000).toFixed(2)} s loop (from ${x.img.path})`]);
     meta.push(['Texture', x.src || 'unknown'], ['Source', x.how === 'sdd' ? 'game design data' : x.how === 'guessed' ? 'matched by name (guessed)' : 'name list only, no texture known']);
   } else {
     meta.push(['Atlas cells', x.cells.map(([r, c]) => `row ${r} col ${c}`).join(', ') || 'unknown']);
@@ -234,6 +257,9 @@ $('#more').onclick = () => { st.shown += PAGE; renderGrid(); };
 $('#close').onclick = () => { $('#detail').hidden = true; st.sel = null; renderGrid(); };
 $('#bg').value = opt.bg;
 $('#bg').onchange = (e) => { opt.bg = e.target.value; save(); renderGrid(); if (st.sel) $('#dprev').className = 'bg-' + opt.bg; };
+$('#animate').checked = opt.anim;
+$('#animate').onchange = (e) => { opt.anim = e.target.checked; save(); st.play = opt.anim; renderGrid(); showPreview(); };
+$('#dplay').onclick = () => { st.play = !st.play; showPreview(); };
 
 $('#resize').checked = opt.resize; $('#xl').value = opt.xl; $('#yl').value = opt.yl; $('#lock').checked = opt.lock;
 $('#tint').checked = opt.tint; $('#colour').value = opt.colour; $('#alpha').value = opt.alpha;

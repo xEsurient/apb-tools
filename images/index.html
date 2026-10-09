@@ -11,6 +11,7 @@
   <div class="glass searchbox"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2"/></svg>
     <input id="search" type="search" placeholder="Search names…" autocomplete="off"></div>
   <div class="glass chip">Background <select id="bg" title="Preview background"><option value="dark">Dark</option><option value="light">Light</option><option value="checker">Checker</option></select></div>
+  <label class="glass chip toggle" title="Play animated materials and flipbooks"><input id="animate" type="checkbox"> Animate</label>
   <div style="flex:1"></div>
   <nav class="glass nav"><a href="../maps/">Map viewer</a><a href="../config/">Config merge</a><a class="on" href="./">Image lookup</a></nav>
 </div>
@@ -27,6 +28,7 @@
   <section id="detail" class="glass" hidden>
     <button id="close" title="Close">×</button>
     <div id="dprev" class="bg-dark"></div>
+    <button id="dplay" hidden>▶ Play</button>
     <h2 id="dname"></h2>
     <dl id="dmeta"></dl>
     <div class="builder">
