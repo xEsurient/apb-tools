@@ -23,6 +23,33 @@ const imgAt = (pkg, i) => images.find((x) => x.pkg === pkg && x.i === i);
 const hudtex = cat.hudtex.map(([name, src, ref, how]) => ({ kind: 'tex', name, src, img: ref ? imgAt(ref[0], ref[1]) : null, how, group: name.split('_')[0] }));
 const hudicon = cat.hudicon.map(([name, cells, changed]) => ({ kind: 'icon', name, cells, changed }));
 const cells = cat.cells.map(([r, c, names, changed]) => ({ kind: 'cell', name: `r${r} c${c}`, cells: [[r, c]], names, changed }));
+const PICTURE_GUESSES = [
+  ['Tagger_Valentines', 4, 1], ['Tagger_Duck', 4, 2], ['Tagger_Rapid99', 4, 4], ['Tagger_Sluttles', 4, 5], ['Tagger_Reaper', 4, 6],
+  ['Tagger_PurpleCat', 4, 7], ['Tagger_Cat', 4, 8], ['Tagger_Suit_Spades', 5, 1], ['Tagger_Suit_Hearts', 5, 2], ['Tagger_Suit_Diamond', 5, 3],
+  ['Tagger_Suit_Clubs', 5, 4], ['Tagger_Suit_Joker', 5, 5], ['Minigame_SnowballFight', 5, 15], ['Faction_Criminal_OpenConflict', 24, 1],
+  ['Faction_Enforcer_OpenConflict', 24, 2], ['Minigame_Infection_Pumpkin', 24, 4], ['Mugging_Easter2015_Bunny', 24, 6],
+  ['Mugging_Easter2015_Chicken', 24, 7], ['Minigame_Anarchy', 24, 11], ['Minigame_Anarchy_Provocateur', 24, 12],
+];
+for (const [name, r, c] of PICTURE_GUESSES) {
+  const ic = hudicon.find((x) => x.name === name), cell = cells.find((x) => x.cells[0][0] === r && x.cells[0][1] === c);
+  if (ic && !ic.cells.length) { ic.cells = [[r, c]]; ic.guessed = true; }
+  if (cell && !cell.names.length) { cell.names = [name]; cell.guessed = true; }
+}
+let tintEl = null;
+function applyTint() {
+  if (!tintEl) {
+    tintEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); tintEl.setAttribute('width', 0); tintEl.setAttribute('height', 0); tintEl.style.position = 'absolute';
+    tintEl.innerHTML = '<filter id="apbtint" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0"/></filter>';
+    document.body.append(tintEl);
+    const css = document.createElement('style');
+    css.textContent = 'body.tinted .pic img, body.tinted .pic .sprite, body.tinted #dprev img, body.tinted #dprev .sprite { filter: url(#apbtint); }';
+    document.head.append(css);
+  }
+  const h = opt.colour, [r, g, b] = [1, 3, 5].map((o) => parseInt(h.substr(o, 2), 16) / 255), a = Math.max(0, Math.min(1, +opt.alpha || 0));
+  tintEl.querySelector('feColorMatrix').setAttribute('values', `${r} 0 0 0 0 0 ${g} 0 0 0 0 0 ${b} 0 0 0 0 0 ${a} 0`);
+  const ui = !st.sel || st.sel.kind === 'img' || opt.target === 'ui';
+  document.body.classList.toggle('tinted', !!opt.tint && ui);
+}
 for (const x of images) x.group = x.pkg, x.name = x.path;
 
 const TABS = {
@@ -129,7 +156,7 @@ function renderGrid() {
     nm.textContent = x.kind === 'img' ? x.path.slice(x.pkg.length + 1) : x.kind === 'cell' ? (x.names[0] || x.name) : x.name;
     c.title = x.kind === 'cell' ? `${x.name}: ${x.names.join(', ') || 'no known name'}` : x.name;
     c.append(pic, nm);
-    const badge = x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : x.how === 'guessed' ? 'guessed' : x.changed ? 'changed' : '';
+    const badge = x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : x.how === 'guessed' || x.guessed ? 'guessed' : x.changed ? 'changed' : '';
     if (badge) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = badge; c.append(b); }
     c.onclick = () => select(x);
     c.ondblclick = async () => { select(x); if (await copy(lineFor(x))) flash('Copied'); };
@@ -154,6 +181,7 @@ function select(x) {
   } else {
     meta.push(['Atlas cells', x.cells.map(([r, c]) => `row ${r} col ${c}`).join(', ') || 'unknown']);
     if (x.changed) meta.push(['Note', 'atlas art changed since the name was recorded']);
+    if (x.guessed) meta.push(['Note', 'name matched to this cell by its picture (newer icon, not in the old name lists): check in game']);
   }
   const dl = $('#dmeta'); dl.replaceChildren();
   for (const [k, v] of meta) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; dl.append(dt, dd); }
@@ -172,6 +200,7 @@ function select(x) {
   update();
 }
 function update() {
+  applyTint();
   const x = st.sel; if (!x) return;
   const ui = x.kind === 'img' || opt.target === 'ui';
   $('#colourrow').hidden = !ui;
@@ -180,7 +209,8 @@ function update() {
   if (x.kind === 'img') notes.push('<Images:> only works in UI text files, not in HUD message files.');
   if (ui && opt.tint) notes.push('ImageColour stays set for the images after it; custom configs reset it with <ImageColour:R=1 G=1 B=1 A=1>. It has no effect on some materials.');
   if (opt.resize) notes.push('Negative XL shifts what follows to the left (draw two images on top of each other); XL=0 stacks the image above the next one.');
-  if (x.kind === 'cell' && !st.name) notes.push('This cell has no known name, so there is no line to copy.');
+  if (x.kind === 'cell' && !st.name) notes.push('No name is known for this cell. HUD icons can only be used by name (<hudicon:Name> / <APB_Images:Name;HUDIcon=TRUE>), and the markup has no way to pick one cell out of the atlas, so there is no line to copy for it.');
+  if (x.kind === 'icon' && !x.cells.length) notes.push('The name is known but its picture is not: it comes from a newer name list and its atlas cell could not be matched. The line works if the name exists in the game.');
   $('#dnote').textContent = notes.join(' ');
 }
 
@@ -224,6 +254,7 @@ document.querySelectorAll('.presets button').forEach((b) => (b.onclick = () => {
 }));
 $('#copy').onclick = async () => flash((await copy($('#line').value)) ? 'Copied' : 'Copy failed: select the text and copy it');
 
+applyTint();
 readHash();
 document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab));
 render();

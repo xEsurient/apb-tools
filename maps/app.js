@@ -36,7 +36,7 @@ const DROPOFF = { DropOff_Enf: 'Enforcer drop-off', DropOff_Crim: 'Criminal drop
   MediumLargeItemDropOff_Crim: 'Medium/large item drop-off (Criminal)', VehicleDropOff_Crim: 'Vehicle drop-off (Criminal)', VehicleDropOff_Enf: 'Vehicle drop-off (Enforcer)' };
 
 const S = { index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1, chunks: {},
-  mode: '2d', opt: { textures: true, labels: true }, icons: {} };
+  mode: '2d', opt: { textures: true, labels: true, imagery: true }, icons: {} };
 
 function status(t) { $('#dname').textContent = t; }
 function progress(t) { const p = $('#progress'); p.style.display = t ? 'block' : 'none'; p.textContent = t || ''; }
@@ -67,7 +67,7 @@ async function init() {
   sel.value = S.index.districts.some(d => d.name === want) ? want : (S.index.districts.find(d => d.name.startsWith('Waterfront')) || S.index.districts[0]).name;
   sel.onchange = () => loadDistrict(sel.value);
   document.querySelectorAll('#modes button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
-  document.querySelectorAll('[data-opt]').forEach(r => r.onclick = () => { const k = r.dataset.opt; S.opt[k] = !S.opt[k]; r.querySelector('.switch').classList.toggle('on', S.opt[k]); draw2d(); if (k === 'textures') V3.applyTextures(); });
+  document.querySelectorAll('[data-opt]').forEach(r => r.onclick = () => { const k = r.dataset.opt; S.opt[k] = !S.opt[k]; r.querySelector('.switch').classList.toggle('on', S.opt[k]); if (k === 'textures') V3.applyTextures(); if (k === 'imagery') imagery(); else draw2d(); });
   $('#paneltoggle').onclick = () => $('#panel').classList.toggle('open');
   $('#zin').onclick = () => zoomBy(1.4); $('#zout').onclick = () => zoomBy(1 / 1.4);
   $('#btop').onclick = () => V3.top(); $('#bover').onclick = () => V3.overview();
@@ -92,6 +92,7 @@ async function loadDistrict(name) {
   $('#kinds').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.k; S.on[k] = !S.on[k]; r.querySelector('.switch').classList.toggle('on', S.on[k]); draw2d(); if (V3.ready) V3.applyKinds(); });
   targetTypes(); missionMatches(); if (M.cur) drawMission();
   $('#detail').style.display = 'none'; fit2d(); draw2d(); progress('');
+  if (S.mode === '2d' && S.opt.imagery) imagery();
   history.replaceState(null, '', '#district=' + encodeURIComponent(name));
   if (S.mode === '3d') { await V3.build(); V3.builtFor = name; }
 }
@@ -119,9 +120,16 @@ function drawScenery(g, W, H, tr, small) {
   }
   g.globalAlpha = 1;
 }
+async function imagery() {
+  const on = S.mode === '2d' && S.opt.imagery;
+  $('#c3d').style.display = S.mode === '3d' || on ? 'block' : 'none';
+  if (on) { V3.init(); V3.resize(); if (!V3.ready || V3.builtFor !== S.name) { try { await V3.build(); V3.builtFor = S.name; } catch (e) { progress(''); } } }
+  draw2d();
+}
 function draw2d() {
   if (S.mode !== '2d' || !S.d) return;
-  const g = cv2.getContext('2d'), W = C2.W, H = C2.H; drawScenery(g, W, H, sxy, false);
+  const g = cv2.getContext('2d'), W = C2.W, H = C2.H, img = S.opt.imagery && V3.ready && V3.builtFor === S.name;
+  if (img) { g.clearRect(0, 0, W, H); V3.renderTop(); } else drawScenery(g, W, H, sxy, false);
   const ms = visibleMarkers(W, H, sxy), sz = C2.sc > 0.03 ? 24 : 18, placed = [];
   g.font = '600 11.5px Inter,system-ui,sans-serif'; g.textBaseline = 'middle';
   for (const [i, x0, y0, L] of ms) {
@@ -378,6 +386,16 @@ const V3 = {
     const near = Math.max(20, h * 0.02); if (Math.abs(near - this.cam.near) > 1) { this.cam.near = near; this.cam.updateProjectionMatrix(); }
     this.cam.lookAt(p.clone().add(fwd)); this.renderer.render(this.scene, this.cam); this.drawMini();
   },
+  renderTop() {
+    if (!this.ortho) { this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600000); this.ortho.up.set(0, 0, -1); }
+    const o = this.ortho, hw = C2.W / 2 / C2.sc, hh = C2.H / 2 / C2.sc;
+    o.left = -hw; o.right = hw; o.top = hh; o.bottom = -hh; o.updateProjectionMatrix();
+    o.position.set(C2.cx, (this.z0 || 0) + 300000, C2.cy); o.lookAt(C2.cx, this.z0 || 0, C2.cy);
+    const fog = this.scene.fog, vis = this.markers.concat(this.msprites || [], [this.marker]).map(s => [s, s.visible]);
+    this.scene.fog = null; vis.forEach(([s]) => s.visible = false);
+    this.renderer.setSize(innerWidth, innerHeight); this.renderer.render(this.scene, o);
+    this.scene.fog = fog; vis.forEach(([s, v]) => s.visible = v);
+  },
   miniBox() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); return [(x0 + x1) / 2 - s / 2, (y0 + y1) / 2 - s / 2, s]; },
   miniToWorld(fx, fy) { const [bx, by, s] = this.miniBox(); return [bx + fx * s, by + fy * s]; },
   drawMini() {
@@ -400,7 +418,7 @@ async function setMode(m, focus) {
   $('#mini').style.display = m === '3d' ? 'block' : 'none'; $('#zoom').style.display = m === '2d' ? 'flex' : 'none';
   $('#v3btns').style.display = m === '3d' ? 'flex' : 'none'; $('#tip').style.display = 'none'; V3.help();
   const b3 = $('#d3'); if (b3) b3.textContent = m === '3d' ? 'Fly here' : 'View in 3D';
-  if (m === '2d') { resize2d(); draw2d(); return; }
+  if (m === '2d') { resize2d(); imagery(); return; }
   V3.init(); V3.resize();
   try { if (!V3.ready || V3.builtFor !== S.name) { await V3.build(); V3.builtFor = S.name; } } catch (e) { progress(''); status('3D failed: ' + e.message); return; }
   if (focus !== undefined) V3.flyTo(focus);

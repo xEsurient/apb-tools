@@ -5,7 +5,7 @@
 <style>
   html,body{overflow:hidden}
   #stage{position:fixed;inset:0}
-  #c2d,#c3d{position:absolute;inset:0;width:100%;height:100%}#c3d{display:none}#c2d{cursor:grab}#c2d.drag{cursor:grabbing}
+  #c2d,#c3d{position:absolute;inset:0;width:100%;height:100%}#c3d{display:none;z-index:0}#c2d{cursor:grab;z-index:1}#c2d.drag{cursor:grabbing}
   .topbar{position:fixed;left:0;right:0;top:0;z-index:5;pointer-events:none}.topbar>*{pointer-events:auto}
   .search{flex:0 1 420px;position:relative;display:flex;align-items:center;gap:8px;padding:0 14px}
   .search input{flex:1;border:0;background:none;padding:11px 0}.search svg{color:var(--dim);flex:none}
@@ -69,9 +69,10 @@
   <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5"/></svg> Map layers</h4>
   <div id="layers"></div>
   <details id="scenery"><summary>Scenery</summary><div id="kinds"></div></details>
-  <details id="opts"><summary>3D options</summary>
+  <details id="opts"><summary>Display options</summary>
     <div class="row" data-opt="textures"><span>Textures</span><span class="switch on" style="margin-left:auto"></span></div>
-    <div class="row" data-opt="labels"><span>Labels on the 2D map</span><span class="switch on" style="margin-left:auto"></span></div></details>
+    <div class="row" data-opt="labels"><span>Labels on the 2D map</span><span class="switch on" style="margin-left:auto"></span></div>
+    <div class="row" data-opt="imagery"><span>Map imagery in 2D (roads, roofs)</span><span class="switch on" style="margin-left:auto"></span></div></details>
 </aside>
 <div id="detail" class="glass"></div>
 <aside id="missions" class="glass"><button class="x" id="mx">✕</button>
