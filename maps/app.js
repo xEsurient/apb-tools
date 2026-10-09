@@ -90,7 +90,7 @@ async function loadDistrict(name) {
   $('#layers').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; r.querySelector('.switch').classList.toggle('on', S.layerOn[k]); draw2d(); V3.applyMarkers(); });
   $('#kinds').innerHTML = S.index.kinds.map((k, i) => kc[i] ? `<div class="row" data-k="${i}"><span class="swatch" style="background:${S.index.colours[i]}"></span>${esc(k)}<span class="n">${kc[i].toLocaleString()}</span><span class="switch on"></span></div>` : '').join('');
   $('#kinds').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.k; S.on[k] = !S.on[k]; r.querySelector('.switch').classList.toggle('on', S.on[k]); draw2d(); if (V3.ready) V3.applyKinds(); });
-  targetTypes(); missionMatches(); if (M.cur) drawMission();
+  targetTypes(); missionMatches(); if (M.cur) drawMission(); S.hits = new Set(); $('#hitchip').style.display = 'none'; computeProps();
   $('#detail').style.display = 'none'; fit2d(); draw2d(); progress('');
   if (S.mode === '2d' && S.opt.imagery) imagery();
   history.replaceState(null, '', '#district=' + encodeURIComponent(name));
@@ -147,7 +147,7 @@ function draw2d() {
     boxes.push(box); g.fillStyle = 'rgba(15,17,21,.85)'; g.beginPath(); g.roundRect(bx, y - 10, w, 20, 6); g.fill(); g.fillStyle = '#e9e9ec'; g.fillText(t, bx + 6, y + 1);
   }
   S.placed = placed; drawMission2d(g, sxy, W, H);
-  for (const i of S.hits) { const [x, y] = sxy(i); g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(x - 7, y - 7, 14, 14); }
+  for (const i of S.hits) { const [x, y] = sxy(i); g.fillStyle = 'rgba(154,208,255,.25)'; g.strokeStyle = '#9ad0ff'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 2.5, 0, 7); g.fill(); }
   if (S.sel >= 0) { const [x, y] = sxy(S.sel); g.strokeStyle = '#f2a33a'; g.lineWidth = 2.5; g.shadowColor = '#f2a33a'; g.shadowBlur = 14; g.beginPath(); g.arc(x, y, 18, 0, 7); g.stroke(); g.shadowBlur = 0; }
   g.fillStyle = 'rgba(233,233,236,.45)'; g.font = '11px Inter,system-ui,sans-serif'; g.fillText(`1 px ≈ ${(1 / C2.sc / 100).toFixed(1)} m`, 16, H - 16);
 }
@@ -198,30 +198,68 @@ function nearby(i) {
   return Object.entries(c).map(([L, n]) => `${n} ${(n === 1 ? LAYERS[L].one : LAYERS[L].name).toLowerCase()}`).join(', ');
 }
 
+const pretty = k => k.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
+function propKey(i) {
+  const d = S.d, a = info(i).arch;
+  if (d.mesh[i] < 0 && d.classes[d.cls[i]] !== 'cProp') return '';
+  if (a) { const k = a.replace(/_?\d*Arc\d+$/, '').replace(/_+$/, '').replace(/_Prop$/i, ''); if (k) return k; }
+  const m = d.mesh[i] >= 0 && S.meshes ? S.meshes[d.mesh[i]].name : '';
+  return m.replace(/_LOD(_\d+)?$/i, '').replace(/_\d+$/, '');
+}
+async function computeProps() {
+  if (!S.meshes) { try { S.meshes = await getJSON('data/meshes.json'); } catch { } }
+  S.props = S.d.x.map((_, i) => propKey(i));
+}
+function hitBounds() {
+  const d = S.d; let x0 = 1e12, y0 = 1e12, x1 = -1e12, y1 = -1e12;
+  for (const i of S.hits) { x0 = Math.min(x0, d.x[i]); x1 = Math.max(x1, d.x[i]); y0 = Math.min(y0, d.y[i]); y1 = Math.max(y1, d.y[i]); }
+  return [x0, y0, x1, y1];
+}
+function showHits(set, label) {
+  S.hits = set; S.hitLabel = label; const chip = $('#hitchip');
+  chip.style.display = set.size && label ? 'flex' : 'none';
+  if (set.size && label) chip.innerHTML = `<b>${esc(label)}</b><span class="dim">${set.size.toLocaleString()} shown</span><button id="hitx">✕</button>`;
+  const hx = $('#hitx'); if (hx) hx.onclick = () => { $('#search').value = ''; showHits(new Set(), ''); };
+  if (set.size && label) {
+    const [x0, y0, x1, y1] = hitBounds();
+    if (S.mode === '3d') { V3.cam.position.set((x0 + x1) / 2, (V3.z0 || 0) + Math.max(x1 - x0, y1 - y0, 3000) * 0.8 + 3000, (y0 + y1) / 2 + 2000); V3.yaw = 0; V3.pitch = -1.2; }
+    else { C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 2500), C2.H / Math.max(y1 - y0, 2500)) * 0.8; }
+  }
+  draw2d(); V3.hitSprites();
+}
 function setupSearch() {
-  const inp = $('#search'), box = $('#results'); let res = [], cur = 0;
+  const inp = $('#search'), box = $('#results'); let res = [], groups = [], cur = 0;
+  const rows = () => box.querySelectorAll('[data-i],[data-g]');
   const run = () => {
-    const q = inp.value.trim().toLowerCase(); res = [];
+    const q = inp.value.trim().toLowerCase(); res = []; groups = [];
     if (q.length >= 2) {
-      const d = S.d;
+      const d = S.d, count = new Map();
+      if (S.props) for (let i = 0; i < d.x.length; i++) { const k = S.props[i]; if (k && (k.toLowerCase().includes(q) || pretty(k).toLowerCase().includes(q))) count.set(k, (count.get(k) || 0) + 1); }
+      groups = [...count].sort((a, b) => b[1] - a[1]).slice(0, 6);
       for (let i = 0; i < d.x.length && res.length < 40; i++) {
         const L = S.layerOf[i], t = (L >= 0 || d.labels[i]) ? title(i) : '';
         if ((t && t.toLowerCase().includes(q)) || d.name[i].toLowerCase().includes(q) || d.classes[d.cls[i]].toLowerCase() === q) res.push(i);
       }
       res.sort((a, b) => (S.layerOf[b] >= 0) - (S.layerOf[a] >= 0));
     }
-    cur = 0; S.hits = new Set(res); draw2d();
-    box.style.display = res.length || q.length >= 2 ? 'block' : 'none';
-    box.innerHTML = res.length ? res.slice(0, 12).map((i, k) => { const L = S.layerOf[i]; return `<div data-i="${i}" class="${k === cur ? 'on' : ''}">${L >= 0 ? `<span class="ic" style="--c:${LAYERS[L].col}">${svg(LAYERS[L].id, 13)}</span>` : ''}${esc(title(i))}<small>${esc(L >= 0 ? LAYERS[L].one : S.d.classes[S.d.cls[i]])}</small></div>`; }).join('')
-      : '<div class="dim">No matches</div>';
-    box.querySelectorAll('[data-i]').forEach(el => el.onmousedown = () => go(+el.dataset.i));
+    cur = 0; box.style.display = q.length >= 2 ? 'block' : 'none';
+    const cube = '<span class="ic" style="--c:#9ad0ff"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span>';
+    box.innerHTML = (groups.length ? `<div class="rh">Props</div>` + groups.map(([k, n]) => `<div data-g="${esc(k)}">${cube}${esc(pretty(k))}<small>${n.toLocaleString()} on this map</small></div>`).join('') : '')
+      + (res.length ? `<div class="rh">Places & objects</div>` + res.slice(0, 12).map(i => { const L = S.layerOf[i]; return `<div data-i="${i}">${L >= 0 ? `<span class="ic" style="--c:${LAYERS[L].col}">${svg(LAYERS[L].id, 13)}</span>` : ''}${esc(title(i))}<small>${esc(L >= 0 ? LAYERS[L].one : S.d.classes[S.d.cls[i]])}</small></div>`; }).join('') : '')
+      || '<div class="dim">No matches</div>';
+    rows().forEach((el, k) => { el.classList.toggle('on', k === cur); el.onmousedown = () => pick(el); });
   };
-  const go = i => { box.style.display = 'none'; select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i); };
+  const pick = el => {
+    box.style.display = 'none';
+    if (el.dataset.g !== undefined) { const k = el.dataset.g, set = new Set(); S.props.forEach((v, i) => { if (v === k) set.add(i); }); inp.value = pretty(k); showHits(set, pretty(k)); return; }
+    const i = +el.dataset.i; showHits(new Set(), ''); select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i);
+  };
   inp.oninput = run; inp.onfocus = run; inp.onblur = () => setTimeout(() => box.style.display = 'none', 150);
   inp.onkeydown = e => {
-    if (e.key === 'Enter' && res.length) go(res[cur]);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { cur = Math.max(0, Math.min(Math.min(res.length, 12) - 1, cur + (e.key === 'ArrowDown' ? 1 : -1))); box.querySelectorAll('[data-i]').forEach((el, k) => el.classList.toggle('on', k === cur)); e.preventDefault(); }
-    if (e.key === 'Escape') { inp.value = ''; run(); inp.blur(); }
+    const r = rows();
+    if (e.key === 'Enter' && r.length) pick(r[cur]);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { cur = Math.max(0, Math.min(r.length - 1, cur + (e.key === 'ArrowDown' ? 1 : -1))); r.forEach((el, k) => el.classList.toggle('on', k === cur)); e.preventDefault(); }
+    if (e.key === 'Escape') { inp.value = ''; showHits(new Set(), ''); run(); inp.blur(); }
   };
 }
 
@@ -324,7 +362,7 @@ const V3 = {
     const zs = Array.from(d.z).sort((a, b) => a - b), z0 = zs[Math.floor(zs.length * 0.05)] || 0, [x0, y0, x1, y1] = dist.bounds;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 40000, y1 - y0 + 40000), new THREE.MeshStandardMaterial({ color: 0x1f2227, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.set((x0 + x1) / 2, z0 - 60, (y0 + y1) / 2); this.scene.add(ground); this.groups.push(ground);
-    this.z0 = z0; this.ready = true; this.applyKinds(); this.buildMarkers(); this.missionSprites();
+    this.z0 = z0; this.ready = true; this.applyKinds(); this.buildMarkers(); this.missionSprites(); this.hitSprites();
     if (S.sel >= 0) this.flyTo(S.sel); else this.overview();
     progress(''); this.help();
   },
@@ -340,6 +378,16 @@ const V3 = {
     this.applyMarkers();
   },
   applyMarkers() { for (const s of this.markers) s.visible = S.layerOn[s.userData.layer]; },
+  hitSprites() {
+    if (!this.scene) return;
+    for (const s of this.hsprites || []) this.scene.remove(s); this.hsprites = [];
+    if (!this.ready || !S.hits.size) return;
+    if (!this.hitMat) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+      g.fillStyle = 'rgba(154,208,255,.35)'; g.strokeStyle = '#9ad0ff'; g.lineWidth = 7; g.beginPath(); g.arc(32, 32, 26, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 7, 0, 7); g.fill();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; this.hitMat = new THREE.SpriteMaterial({ map: t, depthTest: false, fog: false, sizeAttenuation: false }); }
+    const d = S.d;
+    for (const i of S.hits) { const s = new THREE.Sprite(this.hitMat); s.position.set(d.x[i], d.z[i] + 150, d.y[i]); s.scale.set(0.026, 0.026, 1); s.renderOrder = 11; s.userData.placement = i; this.scene.add(s); this.hsprites.push(s); }
+  },
   missionSprites() {
     if (!this.scene) return;
     for (const s of this.msprites || []) this.scene.remove(s); this.msprites = [];
@@ -371,7 +419,7 @@ const V3 = {
   mark(i) { if (!this.marker) return; const d = S.d; this.marker.position.set(d.x[i], d.z[i] + 40, d.y[i]); this.marker.visible = true; },
   pick(e) {
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), this.cam);
-    const sp = ray.intersectObjects((this.msprites || []).concat(this.markers.filter(s => s.visible)), false)[0]; if (sp) return select(sp.object.userData.placement);
+    const sp = ray.intersectObjects((this.msprites || []).concat(this.hsprites || [], this.markers.filter(s => s.visible)), false)[0]; if (sp) return select(sp.object.userData.placement);
     const hit = ray.intersectObjects(this.groups.filter(g => g.isInstancedMesh), false)[0];
     if (hit && hit.instanceId !== undefined) select(hit.object.userData.placements[hit.instanceId]);
   },
@@ -391,7 +439,7 @@ const V3 = {
     const o = this.ortho, hw = C2.W / 2 / C2.sc, hh = C2.H / 2 / C2.sc;
     o.left = -hw; o.right = hw; o.top = hh; o.bottom = -hh; o.updateProjectionMatrix();
     o.position.set(C2.cx, (this.z0 || 0) + 300000, C2.cy); o.lookAt(C2.cx, this.z0 || 0, C2.cy);
-    const fog = this.scene.fog, vis = this.markers.concat(this.msprites || [], [this.marker]).map(s => [s, s.visible]);
+    const fog = this.scene.fog, vis = this.markers.concat(this.msprites || [], this.hsprites || [], [this.marker]).map(s => [s, s.visible]);
     this.scene.fog = null; vis.forEach(([s]) => s.visible = false);
     this.renderer.setSize(innerWidth, innerHeight); this.renderer.render(this.scene, o);
     this.scene.fog = fog; vis.forEach(([s, v]) => s.visible = v);
@@ -399,11 +447,12 @@ const V3 = {
   miniBox() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); return [(x0 + x1) / 2 - s / 2, (y0 + y1) / 2 - s / 2, s]; },
   miniToWorld(fx, fy) { const [bx, by, s] = this.miniBox(); return [bx + fx * s, by + fy * s]; },
   drawMini() {
-    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + M.ver;
+    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + M.ver + '|' + S.hits.size + (S.hitLabel || '');
     if (this._miniKey !== key) {
       const tr = i => [(S.d.x[i] - bx) * sc, (S.d.y[i] - by) * sc]; drawScenery(g, W, W, tr, true);
       for (const [, x, y, L] of visibleMarkers(W, W, tr)) { g.fillStyle = LAYERS[L].col; g.beginPath(); g.arc(x, y, LAYERS[L].small ? 2 : 4, 0, 7); g.fill(); }
       for (const [i, k] of missionPoints()) { const [x, y] = tr(i); g.fillStyle = STAGE_COLS[k % STAGE_COLS.length]; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); }
+      for (const i of S.hits) { const [x, y] = tr(i); g.fillStyle = '#9ad0ff'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); }
       this._miniImg = g.getImageData(0, 0, W, W); this._miniKey = key;
     } else g.putImageData(this._miniImg, 0, 0);
     const p = this.cam.position, x = (p.x - bx) * sc, y = (p.z - by) * sc, a = Math.atan2(-Math.cos(this.yaw), -Math.sin(this.yaw)), h = 0.45;
