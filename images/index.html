@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APB image lookup</title><link rel="stylesheet" href="../assets/style.css"><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="topbar">
+  <a class="glass brand" href="../">APB TOOLS</a>
+  <nav class="glass seg" id="tabs">
+    <button data-tab="images" class="on">Images</button><button data-tab="hudtex">HUD textures</button>
+    <button data-tab="hudicon">HUD icons</button><button data-tab="cells">Icon atlas</button>
+  </nav>
+  <div class="glass searchbox"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2"/></svg>
+    <input id="search" type="search" placeholder="Search names…" autocomplete="off"></div>
+  <div class="glass chip">Background <select id="bg" title="Preview background"><option value="dark">Dark</option><option value="light">Light</option><option value="checker">Checker</option></select></div>
+  <div style="flex:1"></div>
+  <nav class="glass nav"><a href="../maps/">Map viewer</a><a href="../config/">Config merge</a><a class="on" href="./">Image lookup</a></nav>
+</div>
+<div id="layout">
+  <aside id="side" class="glass">
+    <input id="pkgfilter" type="search" placeholder="Filter packages…" autocomplete="off">
+    <ul id="pkgs"></ul>
+  </aside>
+  <main>
+    <p id="info" class="hint"></p>
+    <div id="grid"></div>
+    <button id="more" hidden>Show more</button>
+  </main>
+  <section id="detail" class="glass" hidden>
+    <button id="close" title="Close">×</button>
+    <div id="dprev" class="bg-dark"></div>
+    <h2 id="dname"></h2>
+    <dl id="dmeta"></dl>
+    <div class="builder">
+      <div id="targetrow" class="row">
+        <label><input type="radio" name="target" value="ui" checked> UI text</label>
+        <label><input type="radio" name="target" value="hud"> HUD message</label>
+      </div>
+      <div class="row">
+        <label><input id="resize" type="checkbox" checked> Resize</label>
+        <label>XL <input id="xl" type="number" step="1" value="16"></label>
+        <label>YL <input id="yl" type="number" step="1" value="16"></label>
+        <label><input id="lock" type="checkbox" checked> square</label>
+      </div>
+      <div class="row presets">
+        <button data-s="14">14</button><button data-s="16">16</button><button data-s="24">24</button>
+        <button data-s="32">32</button><button data-s="native">Native</button>
+      </div>
+      <div id="colourrow" class="row">
+        <label><input id="tint" type="checkbox"> ImageColour</label>
+        <input id="colour" type="color" value="#ffffff">
+        <label>A <input id="alpha" type="number" step="0.05" min="0" value="1"></label>
+      </div>
+      <textarea id="line" readonly rows="3"></textarea>
+      <div class="row"><button id="copy" class="primary">Copy to clipboard</button><span id="copied"></span></div>
+      <p id="dnote" class="hint"></p>
+    </div>
+  </section>
+</div>
+<footer class="hint">Unofficial fan tool. APB Reloaded and all images belong to their owners.
+  Click an image to build its line, double-click to copy it straight away.</footer>
+<script type="module" src="app.js"></script>
+</body></html>

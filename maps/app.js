@@ -445,7 +445,7 @@ async function openMissions() {
 }
 function drawMissionList() {
   const q = $('#mq').value.trim().toLowerCase(), f = M.filter;
-  const items = M.list.filter(m => (!f || m.eFaction === f) && (!q || m.sMissionTitle.toLowerCase().includes(q) || m.sAPBDB.toLowerCase().includes(q)));
+  const items = M.list.filter(m => (!f || String(m.eFaction) === f) && (!q || m.sMissionTitle.toLowerCase().includes(q) || m.sAPBDB.toLowerCase().includes(q)));
   $('#mcount').textContent = `${items.length} / ${M.list.length}`;
   $('#mitems').innerHTML = items.map(m => `<div class="mi" data-k="${esc(m.sAPBDB)}"><span class="fac f${m.eFaction}">${FACTION_ID[m.eFaction] || '?'}</span><span class="t">${esc(m.sMissionTitle)}</span><small>${m.nStages} stages</small></div>`).join('') || '<p class="dim">No missions match.</p>';
   $('#mitems').querySelectorAll('.mi').forEach(el => el.onclick = () => selectMission(el.dataset.k));

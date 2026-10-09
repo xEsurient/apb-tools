@@ -5,7 +5,7 @@
    "name": "APB_CustomisationSystems",
    "file": "APB_CustomisationSystems.json",
    "placements": 53,
-   "with_mesh": 6,
+   "with_mesh": 5,
    "meshes": 2,
    "chunks": [
     0
@@ -21,7 +21,7 @@
    "name": "AsylumDistrict",
    "file": "AsylumDistrict.json",
    "placements": 10978,
-   "with_mesh": 1855,
+   "with_mesh": 871,
    "meshes": 428,
    "chunks": [
     0
@@ -37,7 +37,7 @@
    "name": "FinancialDistrict",
    "file": "FinancialDistrict.json",
    "placements": 99297,
-   "with_mesh": 8584,
+   "with_mesh": 4426,
    "meshes": 2378,
    "chunks": [
     0,
@@ -54,7 +54,7 @@
    "name": "PGBeaconDistrict",
    "file": "PGBeaconDistrict.json",
    "placements": 4933,
-   "with_mesh": 1542,
+   "with_mesh": 1236,
    "meshes": 496,
    "chunks": [
     0,
@@ -72,7 +72,7 @@
    "name": "PGCrateDistrict",
    "file": "PGCrateDistrict.json",
    "placements": 4600,
-   "with_mesh": 933,
+   "with_mesh": 658,
    "meshes": 585,
    "chunks": [
     0,
@@ -107,7 +107,7 @@
    "name": "UIDistrict",
    "file": "UIDistrict.json",
    "placements": 2721,
-   "with_mesh": 544,
+   "with_mesh": 195,
    "meshes": 129,
    "chunks": [
     0,
@@ -125,7 +125,7 @@
    "name": "WaterfrontDistrict",
    "file": "WaterfrontDistrict.json",
    "placements": 92964,
-   "with_mesh": 7990,
+   "with_mesh": 3683,
    "meshes": 2047,
    "chunks": [
     0,
