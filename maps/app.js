@@ -228,14 +228,20 @@ function showHits(set, label) {
   draw2d(); V3.hitSprites();
 }
 function setupSearch() {
-  const inp = $('#search'), box = $('#results'); let res = [], groups = [], cur = 0;
-  const rows = () => box.querySelectorAll('[data-i],[data-g]');
+  const inp = $('#search'), box = $('#results'); let res = [], groups = [], models = [], cur = 0;
+  const rows = () => box.querySelectorAll('[data-i],[data-g],[data-m]');
+  const usesOf = m => { const set = new Set(); S.d.mesh.forEach((v, i) => { if (v === m) set.add(i); }); for (const [i, v] of S.d.extra || []) if (v === m) set.add(i); return set; };
   const run = () => {
-    const q = inp.value.trim().toLowerCase(); res = []; groups = [];
+    const q = inp.value.trim().toLowerCase(); res = []; groups = []; models = [];
     if (q.length >= 2) {
       const d = S.d, count = new Map();
       if (S.props) for (let i = 0; i < d.x.length; i++) { const k = S.props[i]; if (k && (k.toLowerCase().includes(q) || pretty(k).toLowerCase().includes(q))) count.set(k, (count.get(k) || 0) + 1); }
       groups = [...count].sort((a, b) => b[1] - a[1]).slice(0, 6);
+      if (S.meshes) {
+        const mc = new Map(), add = m => { if (m >= 0 && S.meshes[m].name.toLowerCase().includes(q)) mc.set(m, (mc.get(m) || 0) + 1); };
+        d.mesh.forEach(add); for (const [, m] of d.extra || []) add(m);
+        models = [...mc].sort((a, b) => b[1] - a[1]).slice(0, 8);
+      }
       for (let i = 0; i < d.x.length && res.length < 40; i++) {
         const L = S.layerOf[i], t = (L >= 0 || d.labels[i]) ? title(i) : '';
         if ((t && t.toLowerCase().includes(q)) || d.name[i].toLowerCase().includes(q) || d.classes[d.cls[i]].toLowerCase() === q) res.push(i);
@@ -245,12 +251,14 @@ function setupSearch() {
     cur = 0; box.style.display = q.length >= 2 ? 'block' : 'none';
     const cube = '<span class="ic" style="--c:#9ad0ff"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span>';
     box.innerHTML = (groups.length ? `<div class="rh">Props</div>` + groups.map(([k, n]) => `<div data-g="${esc(k)}">${cube}${esc(pretty(k))}<small>${n.toLocaleString()} on this map</small></div>`).join('') : '')
+      + (models.length ? `<div class="rh">Models</div>` + models.map(([m, n]) => `<div data-m="${m}">${cube}<span class="mn">${esc(S.meshes[m].name)}</span><small>${n.toLocaleString()} placed</small></div>`).join('') : '')
       + (res.length ? `<div class="rh">Places & objects</div>` + res.slice(0, 12).map(i => { const L = S.layerOf[i]; return `<div data-i="${i}">${L >= 0 ? `<span class="ic" style="--c:${LAYERS[L].col}">${svg(LAYERS[L].id, 13)}</span>` : ''}${esc(title(i))}<small>${esc(L >= 0 ? LAYERS[L].one : S.d.classes[S.d.cls[i]])}</small></div>`; }).join('') : '')
       || '<div class="dim">No matches</div>';
     rows().forEach((el, k) => { el.classList.toggle('on', k === cur); el.onmousedown = () => pick(el); });
   };
   const pick = el => {
     box.style.display = 'none';
+    if (el.dataset.m !== undefined) { const m = +el.dataset.m; inp.value = S.meshes[m].name; showHits(usesOf(m), S.meshes[m].name); return; }
     if (el.dataset.g !== undefined) { const k = el.dataset.g, set = new Set(); S.props.forEach((v, i) => { if (v === k) set.add(i); }); inp.value = pretty(k); showHits(set, pretty(k)); return; }
     const i = +el.dataset.i; showHits(new Set(), ''); select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i);
   };

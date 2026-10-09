@@ -12,6 +12,7 @@
   #results{position:absolute;left:0;right:0;top:calc(100% + 6px);max-height:60vh;overflow:auto;display:none;padding:6px;background:rgba(20,22,28,.97)}
   #results div{padding:8px 10px;border-radius:9px;cursor:pointer;display:flex;gap:10px;align-items:center}#results div:hover,#results div.on{background:rgba(255,255,255,.06)}
   #results small{color:var(--dim);margin-left:auto}
+  #results .mn{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
   #results .rh{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 10px 4px;cursor:default}#results .rh:hover{background:none}
   #hitchip{position:fixed;left:50%;top:76px;transform:translateX(-50%);display:none;align-items:center;gap:10px;padding:6px 8px 6px 14px;z-index:6}
   #hitchip b{color:#9ad0ff}#hitchip button{border:0;background:none;color:var(--dim);padding:2px 8px}
@@ -59,7 +60,7 @@
 <div class="topbar">
   <a class="glass brand" href="../">APB MAPS <small id="dname"></small></a>
   <div class="glass search"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2"/></svg>
-    <input id="search" placeholder="Search contacts, places, props…" autocomplete="off"><div id="results" class="glass"></div></div>
+    <input id="search" placeholder="Search contacts, places, props, models…" autocomplete="off"><div id="results" class="glass"></div></div>
   <div class="glass chip">District <select id="district"></select></div>
   <div class="spacer"></div>
   <button class="glass" id="paneltoggle">Layers</button>
