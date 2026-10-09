@@ -16,6 +16,7 @@ const ICON = {
   spawn: '<path d="M12 2v5M9.5 4.5L12 7l2.5-2.5M5 21a7 7 0 0 1 14 0M12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" stroke-width="2"/>',
   mission: '<path d="M6 21V3h11l-2.5 4.5L17 12H6" fill="currentColor"/>',
   pumpkin: '<path d="M12 7c-1.2-.9-3-1.2-4.6-.6C4.6 7.4 3.5 10 3.8 13c.3 3.4 2.7 6 5.4 6 1 0 1.9-.3 2.8-.8.9.5 1.8.8 2.8.8 2.7 0 5.1-2.6 5.4-6 .3-3-.8-5.6-3.6-6.6-1.6-.6-3.4-.3-4.6.6z" fill="currentColor"/><path d="M12 7c0-1.6.6-3 2-4" fill="none" stroke="currentColor" stroke-width="2"/>',
+  region: '<path d="M3 5l6-2 6 2 6-2v16l-6 2-6-2-6 2zM9 3v16M15 5v16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
   task: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
 };
 const LAYERS = [
@@ -41,8 +42,54 @@ const FACTION = { kFACTION_Both: 'Both factions', kFACTION_Criminal: 'Criminal',
 const DROPOFF = { DropOff_Enf: 'Enforcer drop-off', DropOff_Crim: 'Criminal drop-off', SmallItemDropOff_Crim: 'Small item drop-off (Criminal)',
   MediumLargeItemDropOff_Crim: 'Medium/large item drop-off (Criminal)', VehicleDropOff_Crim: 'Vehicle drop-off (Criminal)', VehicleDropOff_Enf: 'Vehicle drop-off (Enforcer)' };
 
-const S = { season: false, index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1, 
-  mode: '2d', opt: { textures: true, labels: true, imagery: true }, icons: {} };
+const S = { season: false, index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1,
+  mode: '2d', opt: { textures: true, labels: true, imagery: true, regions: false }, icons: {}, regions: null, reg: [], ck: null, ckHide: localStorage.getItem('apbmap-ckhide') === '1' };
+
+const CK_KEY = 'apbmap-collected-v1';
+const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
+const b64 = u => btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+const bitCount = u => { let n = 0; for (let x of u) for (; x; x &= x - 1) n++; return n; };
+function ckStore() { try { return JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch { return {}; } }
+function ckSetup() {
+  const d = S.d, list = [], key = i => d.maps[d.map[i]] + '.' + d.name[i];
+  for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L >= 0 && LAYERS[L].season) list.push(i); }
+  const keys = new Map(list.map(i => [i, key(i)])); list.sort((a, b) => keys.get(a) < keys.get(b) ? -1 : 1);
+  const bits = new Uint8Array((list.length + 7) >> 3), h = fnv(list.map(i => keys.get(i)).join('|')), rec = ckStore()[S.name];
+  let stale = false; if (rec) { if (rec.h === h && rec.n === list.length) bits.set(unb64(rec.b).subarray(0, bits.length)); else stale = true; }
+  S.ck = { list, pos: new Map(list.map((i, k) => [i, k])), bits, h, stale };
+}
+const isDone = i => { const k = S.ck?.pos.get(i); return k !== undefined && (S.ck.bits[k >> 3] >> (k & 7) & 1) === 1; };
+function ckGot(L) { let n = 0; S.ck.list.forEach((i, k) => { if ((L === undefined || S.layerOf[i] === L) && S.ck.bits[k >> 3] >> (k & 7) & 1) n++; }); return n; }
+function ckToggle(i) {
+  const k = S.ck.pos.get(i); if (k === undefined) return;
+  S.ck.bits[k >> 3] ^= 1 << (k & 7); S.ck.stale = false;
+  const s = ckStore(), got = bitCount(S.ck.bits);
+  if (got) s[S.name] = { h: S.ck.h, n: S.ck.list.length, b: b64(S.ck.bits), got }; else delete s[S.name];
+  localStorage.setItem(CK_KEY, JSON.stringify(s));
+  ckRefresh(); if (S.sel === i) select(i);
+}
+function ckRefresh() { seasonPanel(); draw2d(); if (V3.ready) V3.buildMarkers(); }
+const RGROUP_HUE = [275, 30, 130, 0, 175, 55, 220, 320, 95, 200, 15, 250];
+function setupRegions() {
+  const list = (S.regions && S.regions[S.name]) || [], groups = [];
+  const groupOf = n => { const p = n.split(' - '); if (p.length > 1) return p[0]; return list.map(r => r.name.split(' - ')).filter(p => p.length > 1 && n.startsWith(p[0] + ' ')).map(p => p[0])[0] || n; };
+  S.reg = list.filter(r => r.name).map(r => {
+    const g = groupOf(r.name), sub = r.name.startsWith(g + ' - ') ? r.name.slice(g.length + 3) : r.name === g ? '' : r.name.startsWith(g + ' ') ? r.name.slice(g.length + 1) : r.name;
+    let gi = groups.indexOf(g); if (gi < 0) { gi = groups.length; groups.push(g); }
+    const path = new Path2D(); let x0 = 1e12, x1 = -1e12;
+    for (const l of r.loops) { path.moveTo(l[0], l[1]); for (let k = 2; k < l.length; k += 2) { path.lineTo(l[k], l[k + 1]); x0 = Math.min(x0, l[k]); x1 = Math.max(x1, l[k]); } path.closePath(); }
+    return { ...r, group: g, gi, sub, path, w: x1 - x0 };
+  });
+  const seen = groups.map(() => 0);
+  for (const r of S.reg) { const k = seen[r.gi]++, hue = RGROUP_HUE[r.gi % RGROUP_HUE.length] + (r.gi >= RGROUP_HUE.length ? 12 : 0); r.col = `hsl(${hue} ${62 - (k % 3) * 8}% ${48 + (k % 4) * 6}%)`; }
+}
+function inLoops(loops, x, y) {
+  let inside = false;
+  for (const l of loops) for (let a = 0, b = l.length - 2; a < l.length; b = a, a += 2) { const ya = l[a + 1], yb = l[b + 1]; if ((ya > y) !== (yb > y) && x < (l[b] - l[a]) * (y - ya) / (yb - ya) + l[a]) inside = !inside; }
+  return inside;
+}
+const regionAt = (x, y) => S.reg.find(r => inLoops(r.loops, x, y));
 
 function status(t) { $('#dname').textContent = t; }
 function progress(t) { const p = $('#progress'); p.style.display = t ? 'block' : 'none'; p.textContent = t || ''; }
@@ -66,7 +113,7 @@ function makeIcons() {
 
 async function init() {
   makeIcons();
-  S.index = await getJSON('data/index.json');
+  [S.index, S.regions] = await Promise.all([getJSON('data/index.json'), getJSON('data/regions.json').catch(() => null)]);
   const sel = $('#district');
   S.index.districts.filter(d => d.placements > 100).forEach(d => sel.add(new Option(d.name.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2'), d.name)));
   const h = new URLSearchParams(location.hash.slice(1)), want = h.get('district');
@@ -95,11 +142,11 @@ async function loadDistrict(name) {
   S.sgroup = d.maps.map(m => { const g = SEASON.find(([re]) => re.test(m)); return g ? g[1] : ''; });
   S.groups = [...new Set(S.sgroup.filter(Boolean))].map(g => [g, 0]); const gi = new Map(S.groups.map(([g], k) => [g, k]));
   S.gidx = new Int8Array(n).fill(-1); for (let i = 0; i < n; i++) { const g = S.sgroup[d.map[i]]; if (g) { S.gidx[i] = gi.get(g); S.groups[S.gidx[i]][1]++; } }
-  S.groupOn = S.groups.map(([g]) => S.groupWant?.[g] ?? !/purple/i.test(g)); S.hid = new Uint8Array(n); applySeason(false); seasonPanel();
+  S.groupOn = S.groups.map(([g]) => S.groupWant?.[g] ?? !/purple/i.test(g)); S.hid = new Uint8Array(n); applySeason(false); ckSetup(); seasonPanel(); setupRegions();
   status($('#district').selectedOptions[0]?.text || name);
   const kc = S.index.kinds.map(() => 0); d.kind.forEach(k => kc[k]++); S.on = S.index.kinds.map(() => true);
-  $('#layers').innerHTML = LAYERS.map((l, k) => S.counts[k] && !l.season ? `<div class="row" data-l="${k}" style="--c:${l.col}"><div class="ic">${svg(l.id)}</div>${l.name}<span class="n">${S.counts[k].toLocaleString()}</span><span class="switch ${S.layerOn[k] ? 'on' : ''}"></span></div>` : '').join('');
-  $('#layers').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; r.querySelector('.switch').classList.toggle('on', S.layerOn[k]); draw2d(); V3.applyMarkers(); });
+  $('#layers').innerHTML = (S.reg.length ? `<div class="row" data-reg style="--c:#b48cff"><div class="ic">${svg('region')}</div>Regions<span class="n">${S.reg.length}</span><span class="switch ${S.opt.regions ? 'on' : ''}"></span></div>` : '') + LAYERS.map((l, k) => S.counts[k] && !l.season ? `<div class="row" data-l="${k}" style="--c:${l.col}"><div class="ic">${svg(l.id)}</div>${l.name}<span class="n">${S.counts[k].toLocaleString()}</span><span class="switch ${S.layerOn[k] ? 'on' : ''}"></span></div>` : '').join('');
+  $('#layers').querySelectorAll('.row').forEach(r => r.onclick = () => { if (r.dataset.reg !== undefined) { S.opt.regions = !S.opt.regions; r.querySelector('.switch').classList.toggle('on', S.opt.regions); draw2d(); V3.dirty = true; return; } const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; r.querySelector('.switch').classList.toggle('on', S.layerOn[k]); draw2d(); V3.applyMarkers(); });
   $('#kinds').innerHTML = S.index.kinds.map((k, i) => kc[i] ? `<div class="row" data-k="${i}"><span class="swatch" style="background:${S.index.colours[i]}"></span>${esc(k)}<span class="n">${kc[i].toLocaleString()}</span><span class="switch on"></span></div>` : '').join('');
   $('#kinds').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.k; S.on[k] = !S.on[k]; r.querySelector('.switch').classList.toggle('on', S.on[k]); draw2d(); if (V3.ready) V3.applyKinds(); });
   targetTypes(); missionMatches(); if (M.cur) drawMission(); S.hits = new Set(); $('#hitchip').style.display = 'none'; computeProps();
@@ -115,15 +162,29 @@ function applySeason(redraw = true) {
 }
 function seasonPanel() {
   const el = $('#seasonal'); el.style.display = S.groups.length ? '' : 'none'; if (!S.groups.length) return;
-  const row = (attr, on, body, n) => `<div class="row" ${attr}>${body}<span class="n">${n.toLocaleString()}</span><span class="switch ${on ? 'on' : ''}"></span></div>`;
-  $('#season').innerHTML = row('data-s="all"', S.season, '<b>Show seasonal content</b>', S.groups.reduce((a, g) => a + g[1], 0))
-    + `<div class="${S.season ? '' : 'off'}" id="sgroups">` + S.groups.map(([g, n], k) => row(`data-s="${k}"`, S.groupOn[k], `<span class="swatch" style="background:#f2a33a"></span>${esc(g)}`, n)).join('')
-    + LAYERS.map((l, k) => l.season && S.counts[k] ? row(`data-l="${k}"`, S.layerOn[k], `<div class="ic" style="--c:${l.col}">${svg(l.id)}</div>${l.name}`, S.counts[k]) : '').join('') + '</div>';
+  const row = (attr, on, body, n) => `<div class="row" ${attr}>${body}<span class="n">${n}</span><span class="switch ${on ? 'on' : ''}"></span></div>`;
+  const total = S.ck.list.length, got = total ? ckGot() : 0, others = Object.entries(ckStore()).filter(([n, r]) => n !== S.name && r.got);
+  const dn = n => n.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
+  $('#season').innerHTML = row('data-s="all"', S.season, '<b>Show seasonal content</b>', S.groups.reduce((a, g) => a + g[1], 0).toLocaleString())
+    + `<div class="${S.season ? '' : 'off'}" id="sgroups">` + S.groups.map(([g, n], k) => row(`data-s="${k}"`, S.groupOn[k], `<span class="swatch" style="background:#f2a33a"></span>${esc(g)}`, n.toLocaleString())).join('')
+    + LAYERS.map((l, k) => l.season && S.counts[k] ? row(`data-l="${k}"`, S.layerOn[k], `<div class="ic" style="--c:${l.col}">${svg(l.id)}</div>${l.name}`, `${ckGot(k).toLocaleString()} / ${S.counts[k].toLocaleString()}`) : '').join('')
+    + (total ? `<div class="ck"><div class="ckbar"><i style="width:${(got / total * 100).toFixed(2)}%"></i></div>
+      <div class="ckt"><b>${got.toLocaleString()}</b> / ${total.toLocaleString()} collected here${others.length ? ' · ' + others.map(([n, r]) => `${esc(dn(n))} ${r.got.toLocaleString()} / ${r.n.toLocaleString()}`).join(' · ') : ''}</div>
+      ${S.ck.stale ? '<p class="bad" style="font-size:12px;margin:4px 0">Saved progress for this district was made with different map data and could not be applied.</p>' : ''}
+      ${row('data-ck="hide"', S.ckHide, 'Hide collected', '')}
+      <div class="ckbtns"><button id="ckreset">Reset</button></div>
+      <p class="hint" style="margin:6px 2px 0">Right-click a pumpkin (or open it and press <b>Mark collected</b>) to tick it off. Progress is saved in this browser.</p></div>` : '') + '</div>';
   $('#season').querySelectorAll('.row').forEach(r => r.onclick = () => {
+    if (r.dataset.ck) { S.ckHide = !S.ckHide; localStorage.setItem('apbmap-ckhide', S.ckHide ? '1' : '0'); ckRefresh(); return; }
     if (r.dataset.l !== undefined) { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; seasonPanel(); draw2d(); V3.applyMarkers(); return; }
     if (r.dataset.s === 'all') S.season = !S.season; else { const k = +r.dataset.s; S.groupOn[k] = !S.groupOn[k]; S.groupWant = { ...S.groupWant, [S.groups[k][0]]: S.groupOn[k] }; }
     seasonPanel(); applySeason();
   });
+  if (!total) return;
+  $('#ckreset').onclick = () => {
+    if (!confirm('Clear every collected mark in all districts?')) return;
+    localStorage.removeItem(CK_KEY); ckSetup(); ckRefresh();
+  };
 }
 function reveal(list) {
   const arr = [...list], shown = i => S.gidx[i] < 0 || (S.season && S.groupOn[S.gidx[i]]);
@@ -143,7 +204,7 @@ function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const wx = (mx - C2.W / 2) / 
 function centerOn(i) { C2.cx = S.d.x[i]; C2.cy = S.d.y[i]; C2.sc = Math.max(C2.sc, 0.06); draw2d(); }
 function visibleMarkers(W, H, tr, pad = 14) {
   const out = [], d = S.d;
-  for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L < 0 || !S.layerOn[L] || S.hid[i]) continue; const [x, y] = tr(i); if (x > -pad && y > -pad && x < W + pad && y < H + pad) out.push([i, x, y, L]); }
+  for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L < 0 || !S.layerOn[L] || S.hid[i] || (S.ckHide && isDone(i))) continue; const [x, y] = tr(i); if (x > -pad && y > -pad && x < W + pad && y < H + pad) out.push([i, x, y, L]); }
   return out;
 }
 function drawScenery(g, W, H, tr, small) {
@@ -155,6 +216,28 @@ function drawScenery(g, W, H, tr, small) {
     for (let i = 0; i < n; i++) { if (d.kind[i] !== k || S.layerOf[i] >= 0 || S.hid[i]) continue; const [x, y] = tr(i); if (x < -3 || y < -3 || x > W + 3 || y > H + 3) continue; g.fillRect(x - s / 2, y - s / 2, s, s); }
   }
   g.globalAlpha = 1;
+}
+function drawRegions(g, W, H) {
+  if (!S.opt.regions || !S.reg.length) return;
+  g.save(); g.translate(W / 2, H / 2); g.scale(C2.sc, C2.sc); g.translate(-C2.cx, -C2.cy);
+  for (const r of S.reg) { g.fillStyle = r.col; g.globalAlpha = r === S.regHover ? 0.55 : 0.36; g.fill(r.path, 'evenodd'); }
+  g.globalAlpha = 1; g.lineJoin = 'round'; g.lineWidth = 2 / C2.sc; g.strokeStyle = 'rgba(10,11,14,.8)'; for (const r of S.reg) g.stroke(r.path);
+  g.lineWidth = 1 / C2.sc; g.strokeStyle = 'rgba(255,255,255,.55)'; for (const r of S.reg) g.stroke(r.path);
+  g.restore();
+  if (!S.opt.labels) return;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  for (const r of S.reg) {
+    const x = (r.c[0] - C2.cx) * C2.sc + W / 2, y = (r.c[1] - C2.cy) * C2.sc + H / 2; if (x < -200 || y < -60 || x > W + 200 || y > H + 60) continue;
+    const main = r.sub || r.group, top = r.sub ? r.group : '', fs = Math.min(22, r.w * C2.sc / Math.max(main.length, top.length * 0.7, 4) * 1.5); if (fs < 8.5) continue;
+    g.lineWidth = 3.5; g.strokeStyle = 'rgba(8,9,12,.75)';
+    if (top) { g.font = `600 ${Math.round(fs * 0.7)}px Inter,system-ui,sans-serif`; g.fillStyle = 'rgba(233,233,236,.75)'; g.strokeText(top, x, y - fs * 0.75); g.fillText(top, x, y - fs * 0.75); }
+    g.font = `700 ${Math.round(fs)}px Inter,system-ui,sans-serif`; g.fillStyle = '#fff'; g.strokeText(main, x, y + (top ? fs * 0.2 : 0)); g.fillText(main, x, y + (top ? fs * 0.2 : 0));
+  }
+  g.textAlign = 'start';
+}
+function drawCheck(g, x, y, z) {
+  g.fillStyle = '#2bb673'; g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 1.5; g.beginPath(); g.arc(x + z * 0.32, y - z * 0.32, z * 0.3, 0, 7); g.fill(); g.stroke();
+  g.strokeStyle = '#fff'; g.lineWidth = Math.max(1.5, z * 0.09); g.beginPath(); g.moveTo(x + z * 0.19, y - z * 0.32); g.lineTo(x + z * 0.29, y - z * 0.21); g.lineTo(x + z * 0.46, y - z * 0.44); g.stroke();
 }
 async function imagery() {
   const on = S.mode === '2d' && S.opt.imagery;
@@ -168,13 +251,15 @@ function draw2dNow() {
   if (S.mode !== '2d' || !S.d) return;
   const g = cv2.getContext('2d'), W = C2.W, H = C2.H, img = S.opt.imagery && V3.ready && V3.builtFor === S.name;
   if (img) { g.clearRect(0, 0, W, H); V3.renderTop(); } else drawScenery(g, W, H, sxy, false);
-  const ms = visibleMarkers(W, H, sxy), sz = C2.sc > 0.03 ? 24 : 18, placed = [];
+  drawRegions(g, W, H);
+  const ms = visibleMarkers(W, H, sxy), sz = C2.sc > 0.03 ? 24 : 18, placed = []; S.smallPlaced = [];
   g.font = '600 11.5px Inter,system-ui,sans-serif'; g.textBaseline = 'middle';
   for (const [i, x0, y0, L] of ms) {
     let x = x0, y = y0;
-    if (LAYERS[L].small) { const img = S.icons[LAYERS[L].id], z = Math.max(12, sz * 0.62); if (img.complete) g.drawImage(img, x - z / 2, y - z / 2, z, z); continue; }
+    const done = isDone(i);
+    if (LAYERS[L].small) { S.smallPlaced.push([x, y, i]); const img = S.icons[LAYERS[L].id], z = Math.max(12, sz * 0.62); g.globalAlpha = done ? 0.4 : 1; if (img.complete) g.drawImage(img, x - z / 2, y - z / 2, z, z); g.globalAlpha = 1; if (done) drawCheck(g, x, y, Math.max(z, 18)); continue; }
     for (let k = 0; k < 6 && placed.some(p => Math.abs(p[0] - x) < sz * 0.8 && Math.abs(p[1] - y) < sz * 0.8); k++) { x = x0 + Math.cos(k * 1.3) * sz * 0.9; y = y0 + Math.sin(k * 1.3) * sz * 0.9; }
-    placed.push([x, y, i, L]); const img = S.icons[LAYERS[L].id]; if (img.complete) g.drawImage(img, x - sz / 2, y - sz / 2, sz, sz);
+    placed.push([x, y, i, L]); const img = S.icons[LAYERS[L].id]; g.globalAlpha = done ? 0.4 : 1; if (img.complete) g.drawImage(img, x - sz / 2, y - sz / 2, sz, sz); g.globalAlpha = 1; if (done) drawCheck(g, x, y, sz);
   }
   const boxes = [], prio = id => ({ contact: 0, beacon: 1, dropoff: 2 }[id] ?? 9);
   const cand = placed.filter(([, , i, L]) => i === S.sel || (S.opt.labels && prio(LAYERS[L].id) < 9 && (C2.sc > 0.025 || LAYERS[L].id === 'contact')))
@@ -191,6 +276,7 @@ function draw2dNow() {
 }
 function pick2d(mx, my) {
   for (const [x, y, i] of (S.placed || []).slice().reverse()) if ((x - mx) ** 2 + (y - my) ** 2 < 14 ** 2) return i;
+  for (const [x, y, i] of (S.smallPlaced || []).slice().reverse()) if ((x - mx) ** 2 + (y - my) ** 2 < 9 ** 2) return i;
   let best = -1, bd = 7 * 7; const d = S.d;
   for (let i = 0; i < d.x.length; i++) { if (!S.on[d.kind[i]] || S.layerOf[i] >= 0 || S.hid[i]) continue; const [x, y] = sxy(i), dd = (x - mx) ** 2 + (y - my) ** 2; if (dd < bd) { bd = dd; best = i; } }
   return best;
@@ -201,10 +287,13 @@ window.addEventListener('mouseup', () => { drag = null; cv2.classList.remove('dr
 cv2.onmousemove = e => {
   const tip = $('#tip');
   if (drag) { const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; C2.cx = drag[2] - dx / C2.sc; C2.cy = drag[3] - dy / C2.sc; tip.style.display = 'none'; draw2d(); return; }
-  const i = pick2d(e.clientX, e.clientY); if (i < 0) { tip.style.display = 'none'; return; }
-  tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px'; tip.textContent = title(i);
+  const i = pick2d(e.clientX, e.clientY), reg = S.opt.regions ? regionAt((e.clientX - C2.W / 2) / C2.sc + C2.cx, (e.clientY - C2.H / 2) / C2.sc + C2.cy) : undefined;
+  if (reg !== S.regHover) { S.regHover = reg; draw2d(); }
+  const t = i >= 0 ? title(i) + (isDone(i) ? ' ✓' : '') : reg ? reg.name : ''; if (!t) { tip.style.display = 'none'; return; }
+  tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px'; tip.textContent = t;
 };
-cv2.onmouseleave = () => $('#tip').style.display = 'none';
+cv2.onmouseleave = () => { $('#tip').style.display = 'none'; if (S.regHover) { S.regHover = undefined; draw2d(); } };
+cv2.oncontextmenu = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0 && S.ck?.pos.has(i)) { e.preventDefault(); ckToggle(i); } };
 cv2.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.25 : 0.8, e.clientX, e.clientY); }, { passive: false });
 cv2.onclick = e => { if (moved) return; const i = pick2d(e.clientX, e.clientY); if (i >= 0) select(i); else { S.sel = -1; $('#detail').style.display = 'none'; draw2d(); } };
 cv2.ondblclick = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0) { select(i); setMode('3d', i); } };
@@ -220,12 +309,16 @@ function select(i) {
   rows.push(['District', $('#district').selectedOptions[0]?.text || S.name], ['Map', d.maps[d.map[i]]], ['Position', `X ${Math.round(d.x[i]).toLocaleString()} · Y ${Math.round(d.y[i]).toLocaleString()} · Z ${Math.round(d.z[i]).toLocaleString()}`]);
   if (d.mesh[i] >= 0 && S.meshes) rows.push(['Model', S.meshes[d.mesh[i]].name]);
   rows.push(['Object', `${d.classes[d.cls[i]]} · ${d.name[i]}`]);
+  const reg = regionAt(d.x[i], d.y[i]); if (reg) rows.splice(rows.findIndex(r => r[0] === 'District') + 1, 0, ['Region', reg.name]);
   const near = nearby(i); if (near) rows.push(['Nearby', near]);
+  const ck = S.ck?.pos.has(i), done = isDone(i);
   const el = $('#detail'); el.style.display = 'block';
   el.innerHTML = `<button class="x" id="dx">✕</button><div class="t">${esc(title(i))}</div><div class="s">${L >= 0 ? LAYERS[L].one : esc(S.index.kinds[d.kind[i]])}</div>
     <div class="kv">${rows.map(r => `<span>${r[0]}</span><span>${esc(r[1])}</span>`).join('')}</div>
+    ${ck ? `<div class="acts"><button id="dck" class="${done ? 'ckon' : ''}">${done ? '✓ Collected' : 'Mark collected'}</button></div>` : ''}
     <div class="acts"><button class="primary" id="d3">${S.mode === '3d' ? 'Fly here' : 'View in 3D'}</button><button id="dl">Copy link</button></div>`;
   $('#dx').onclick = () => { el.style.display = 'none'; S.sel = -1; draw2d(); };
+  if (ck) $('#dck').onclick = () => ckToggle(i);
   $('#d3').onclick = () => S.mode === '3d' ? V3.flyTo(i) : setMode('3d', i);
   $('#dl').onclick = () => { const u = location.href.split('#')[0] + '#' + new URLSearchParams({ district: S.name, sel: i, mode: S.mode }); navigator.clipboard?.writeText(u); $('#dl').textContent = 'Copied'; };
   history.replaceState(null, '', '#' + new URLSearchParams({ district: S.name, sel: i }));
@@ -431,9 +524,10 @@ const V3 = {
   buildMarkers() {
     this.markers = this.drop(this.markers);
     if (!this.layerTex) this.layerTex = LAYERS.map(l => this.icon(g => g.drawImage(S.icons[l.id], 0, 0, 64, 64)));
-    const per = LAYERS.map(() => []), d = S.d;
-    for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L >= 0 && !S.hid[i]) per[L].push(i); }
-    per.forEach((list, L) => { if (!list.length) return; const p = this.points(list, LAYERS[L].small ? 120 : 250, this.layerTex[L], LAYERS[L].small ? 20 : 30, 10); p.userData.layer = L; this.markers.push(p); });
+    if (!this.doneTex) this.doneTex = LAYERS.map(l => this.icon(g => { g.globalAlpha = 0.4; g.drawImage(S.icons[l.id], 0, 0, 64, 64); g.globalAlpha = 1; drawCheck(g, 32, 32, 50); }));
+    const per = LAYERS.map(() => []), done = LAYERS.map(() => []), d = S.d;
+    for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L < 0 || S.hid[i]) continue; if (!isDone(i)) per[L].push(i); else if (!S.ckHide) done[L].push(i); }
+    [[per, this.layerTex], [done, this.doneTex]].forEach(([lists, tex]) => lists.forEach((list, L) => { if (!list.length) return; const p = this.points(list, LAYERS[L].small ? 120 : 250, tex[L], LAYERS[L].small ? 20 : 30, 10); p.userData.layer = L; this.markers.push(p); }));
     this.applyMarkers();
   },
   applyMarkers() { for (const p of this.markers) p.visible = S.layerOn[p.userData.layer]; },
@@ -513,9 +607,10 @@ const V3 = {
   miniBox() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); return [(x0 + x1) / 2 - s / 2, (y0 + y1) / 2 - s / 2, s]; },
   miniToWorld(fx, fy) { const [bx, by, s] = this.miniBox(); return [bx + fx * s, by + fy * s]; },
   drawMini() {
-    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + S.season + S.groupOn.join() + M.ver + '|' + S.hits.size + (S.hitLabel || '');
+    const cv = $('#mini canvas'), g = cv.getContext('2d'), W = cv.width, [bx, by, s] = this.miniBox(), sc = W / s, key = S.name + S.on.join() + S.layerOn.join() + S.season + S.groupOn.join() + S.opt.regions + S.ckHide + bitCount(S.ck?.bits || []) + M.ver + '|' + S.hits.size + (S.hitLabel || '');
     if (this._miniKey !== key) {
       const tr = i => [(S.d.x[i] - bx) * sc, (S.d.y[i] - by) * sc]; drawScenery(g, W, W, tr, true);
+      if (S.opt.regions) { g.save(); g.scale(sc, sc); g.translate(-bx, -by); for (const r of S.reg) { g.fillStyle = r.col; g.globalAlpha = 0.4; g.fill(r.path, 'evenodd'); } g.globalAlpha = 1; g.lineWidth = 1 / sc; g.strokeStyle = 'rgba(255,255,255,.5)'; for (const r of S.reg) g.stroke(r.path); g.restore(); }
       for (const [, x, y, L] of visibleMarkers(W, W, tr)) { g.fillStyle = LAYERS[L].col; g.beginPath(); g.arc(x, y, LAYERS[L].small ? 2 : 4, 0, 7); g.fill(); }
       for (const [i, k] of missionPoints()) { const [x, y] = tr(i); g.fillStyle = STAGE_COLS[k % STAGE_COLS.length]; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); }
       for (const i of S.hits) { const [x, y] = tr(i); g.fillStyle = '#9ad0ff'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); }
