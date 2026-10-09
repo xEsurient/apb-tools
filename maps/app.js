@@ -35,7 +35,7 @@ const FACTION = { kFACTION_Both: 'Both factions', kFACTION_Criminal: 'Criminal',
 const DROPOFF = { DropOff_Enf: 'Enforcer drop-off', DropOff_Crim: 'Criminal drop-off', SmallItemDropOff_Crim: 'Small item drop-off (Criminal)',
   MediumLargeItemDropOff_Crim: 'Medium/large item drop-off (Criminal)', VehicleDropOff_Crim: 'Vehicle drop-off (Criminal)', VehicleDropOff_Enf: 'Vehicle drop-off (Enforcer)' };
 
-const S = { index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1, chunks: {},
+const S = { index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1, 
   mode: '2d', opt: { textures: true, labels: true, imagery: true }, icons: {} };
 
 function status(t) { $('#dname').textContent = t; }
@@ -126,7 +126,9 @@ async function imagery() {
   if (on) { V3.init(); V3.resize(); if (!V3.ready || V3.builtFor !== S.name) { try { await V3.build(); V3.builtFor = S.name; } catch (e) { progress(''); } } }
   draw2d();
 }
-function draw2d() {
+let raf2d = 0;
+function draw2d() { if (!raf2d) raf2d = requestAnimationFrame(() => { raf2d = 0; draw2dNow(); }); }
+function draw2dNow() {
   if (S.mode !== '2d' || !S.d) return;
   const g = cv2.getContext('2d'), W = C2.W, H = C2.H, img = S.opt.imagery && V3.ready && V3.builtFor === S.name;
   if (img) { g.clearRect(0, 0, W, H); V3.renderTop(); } else drawScenery(g, W, H, sxy, false);
@@ -282,13 +284,22 @@ function ueMatrix(i) {
     0, 0, 0, 1);
   return new THREE.Matrix4().multiplyMatrices(P, m).multiply(new THREE.Matrix4().makeScale(d.sx[i] || 1, d.sy[i] || 1, d.sz[i] || 1));
 }
-const TEX = new Map(), TEXCHUNK = {};
+const TEX = new Map(), FILES = new Map(), DL = { got: 0, total: 0, on: 0 };
+function dlShow() { if (DL.on) progress(`Downloading 3D data ${(DL.got / 1e6).toFixed(1)} / ${(DL.total / 1e6).toFixed(1)} MB…`); }
+function fetchFile(name, size) {
+  if (!FILES.has(name)) FILES.set(name, (async () => {
+    const r = await fetch('data/' + name); if (!r.ok) throw new Error(name + ' ' + r.status);
+    DL.total += size; const parts = [], rd = r.body.getReader();
+    for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); DL.got += value.length; dlShow(); }
+    const blob = new Blob(parts);
+    return name.endsWith('.gz') ? new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : blob.arrayBuffer();
+  })());
+  return FILES.get(name);
+}
 function texture(id, r) {
   if (!TEX.has(id)) TEX.set(id, (async () => {
-    S.texIndex = S.texIndex || await (S.texIndexP = S.texIndexP || getJSON('data/textures.json'));
-    const [c, off, len] = S.texIndex[id];
-    if (!TEXCHUNK[c]) TEXCHUNK[c] = fetch(`data/tex_${c}.bin`).then(x => x.arrayBuffer());
-    const bmp = await createImageBitmap(new Blob([(await TEXCHUNK[c]).slice(off, off + len)], { type: 'image/webp' }));
+    const d = S.d, [c, off, len] = d.texLoc[id], [fn, size] = d.texFiles[c];
+    const bmp = await createImageBitmap(new Blob([(await fetchFile(fn, size)).slice(off, off + len)], { type: 'image/webp' }));
     const t = new THREE.Texture(bmp); t.flipY = false; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = r.capabilities.getMaxAnisotropy(); t.needsUpdate = true;
     return t;
   })());
@@ -296,15 +307,15 @@ function texture(id, r) {
 }
 function useTexture(m, r) {
   const tid = m.userData.tid;
-  if (tid < 0 || !S.opt.textures) { m.map = null; m.color.set(m.userData.col); m.needsUpdate = true; return; }
-  texture(tid, r).then(t => { if (!S.opt.textures) return; m.map = t; m.color.set(0xffffff); m.needsUpdate = true; }).catch(() => {});
+  V3.dirty = true; if (tid < 0 || !S.opt.textures) { m.map = null; m.color.set(m.userData.col); m.needsUpdate = true; return; }
+  texture(tid, r).then(t => { if (!S.opt.textures) return; m.map = t; m.color.set(0xffffff); m.needsUpdate = true; V3.dirty = true; if (S.mode === '2d') draw2d(); }).catch(() => {});
 }
 const V3 = {
   ready: false, renderer: null, scene: null, cam: null, groups: [], markers: [], marker: null, mats: new Map(),
   yaw: 0, pitch: -0.3, speed: 2000, keys: new Set(),
   init() {
     if (this.renderer) return;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true }); this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); $('#c3d').appendChild(this.renderer.domElement);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true }); this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); $('#c3d').appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0xa9bccd); this.scene.fog = new THREE.Fog(0xa9bccd, 20000, 120000);
     this.cam = new THREE.PerspectiveCamera(60, 1, 20, 400000);
     this.scene.add(new THREE.HemisphereLight(0xe8eef5, 0x4a4438, 2.0));
@@ -328,15 +339,11 @@ const V3 = {
   },
   help() { const h = $('#help'); h.style.display = S.mode === '3d' ? 'block' : 'none'; h.textContent = `WASD / arrows move · Q / E down / up · Shift faster · drag to look · wheel: speed ${Math.round(this.speed)}`; },
   resize() { this.renderer.setSize(innerWidth, innerHeight); this.cam.aspect = innerWidth / innerHeight; this.cam.updateProjectionMatrix(); },
-  async chunk(n) {
-    if (!S.chunks[n]) S.chunks[n] = fetch(`data/meshes_${n}.bin`).then(r => { if (!r.ok) throw new Error('meshes_' + n + '.bin ' + r.status); return r.arrayBuffer(); });
-    return S.chunks[n];
-  },
-  geometry(id, buf) {
+  geometry(id, buf, off) {
     const m = S.meshes[id]; if (!m.v) return null;
-    const q = new Uint16Array(buf, m.off, m.v * 3), pos = new Float32Array(m.v * 3);
+    const q = new Uint16Array(buf, off, m.v * 3), pos = new Float32Array(m.v * 3);
     for (let i = 0; i < m.v; i++) for (let k = 0; k < 3; k++) pos[3 * i + k] = m.lo[k] + q[3 * i + k] / 65535 * (m.hi[k] - m.lo[k]);
-    const uoff = m.off + ((m.v * 6 + 3) & ~3), qu = new Uint16Array(buf, uoff, m.v * 2), uv = new Float32Array(m.v * 2);
+    const uoff = off + ((m.v * 6 + 3) & ~3), qu = new Uint16Array(buf, uoff, m.v * 2), uv = new Float32Array(m.v * 2);
     for (let i = 0; i < m.v; i++) for (let k = 0; k < 2; k++) uv[2 * i + k] = m.ulo[k] + qu[2 * i + k] / 65535 * (m.uhi[k] - m.ulo[k]);
     const ioff = uoff + m.v * 4, idx = m.i32 ? new Uint32Array(buf.slice(ioff, ioff + m.i * 4)) : new Uint16Array(buf.slice(ioff, ioff + m.i * 2));
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(idx, 1));
@@ -358,14 +365,15 @@ const V3 = {
     const add = (m, i) => { if (!by.has(m)) by.set(m, []); by.get(m).push(i); };
     for (let i = 0; i < d.x.length; i++) if (d.mesh[i] >= 0) add(d.mesh[i], i);
     for (const [i, m] of d.extra || []) add(m, i);
-    let done = 0;
-    for (const n of dist.chunks) { progress(`Downloading 3D data ${++done} / ${dist.chunks.length}…`); await this.chunk(n); }
+    DL.on++; dlShow();
+    let bufs; try { bufs = await Promise.all(d.meshFiles.map(([fn, size]) => fetchFile(fn, size))); } finally { DL.on--; }
+    for (const [fn, size] of d.texFiles) fetchFile(fn, size).catch(() => {});
     progress('Building the scene…');
     for (const [id, list] of by) {
-      const m = S.meshes[id], g = this.geometry(id, await this.chunk(m.chunk)); if (!g) continue;
+      const m = S.meshes[id], loc = d.meshLoc[id]; if (!loc) continue; const g = this.geometry(id, bufs[loc[0]], loc[1]); if (!g) continue;
       const im = new THREE.InstancedMesh(g, m.groups.map(x => this.material(x[2], x[3])), list.length);
       list.forEach((pi, k) => im.setMatrixAt(k, ueMatrix(pi)));
-      im.userData.placements = list; im.computeBoundingSphere(); this.scene.add(im); this.groups.push(im);
+      im.userData.placements = list; im.userData.r = Math.hypot(...m.hi.map((h, k) => (h - m.lo[k]) / 2)) * list.reduce((a, i) => Math.max(a, Math.abs(d.sx[i] || 1), Math.abs(d.sy[i] || 1), Math.abs(d.sz[i] || 1)), 0); im.computeBoundingSphere(); this.scene.add(im); this.groups.push(im);
     }
     const zs = Array.from(d.z).sort((a, b) => a - b), z0 = zs[Math.floor(zs.length * 0.05)] || 0, [x0, y0, x1, y1] = dist.bounds;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 40000, y1 - y0 + 40000), new THREE.MeshStandardMaterial({ color: 0x1f2227, roughness: 1 }));
@@ -374,43 +382,44 @@ const V3 = {
     if (S.sel >= 0) this.flyTo(S.sel); else this.overview();
     progress(''); this.help();
   },
+  icon(draw) { const c = document.createElement('canvas'); c.width = c.height = 64; draw(c.getContext('2d')); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; },
+  points(list, h, tex, size, order) {
+    const d = S.d, pos = new Float32Array(list.length * 3);
+    list.forEach((i, k) => { pos[3 * k] = d.x[i]; pos[3 * k + 1] = d.z[i] + h; pos[3 * k + 2] = d.y[i]; });
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({ map: tex, size, sizeAttenuation: false, transparent: true, alphaTest: 0.05, depthTest: false, depthWrite: false, fog: false }));
+    p.renderOrder = order; p.frustumCulled = false; p.userData.list = list; p.userData.size = size; this.scene.add(p); return p;
+  },
+  drop(arr) { for (const p of arr || []) { this.scene.remove(p); p.geometry.dispose(); p.material.dispose(); } return []; },
   buildMarkers() {
-    for (const s of this.markers) this.scene.remove(s); this.markers = [];
-    const mats = LAYERS.map(l => { const img = S.icons[l.id], c = document.createElement('canvas'); c.width = c.height = 64; c.getContext('2d').drawImage(img, 0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return new THREE.SpriteMaterial({ map: t, depthTest: false, fog: false, sizeAttenuation: false }); });
-    const d = S.d;
-    for (let i = 0; i < d.x.length; i++) {
-      const L = S.layerOf[i]; if (L < 0) continue;
-      const s = new THREE.Sprite(mats[L]), k = LAYERS[L].small ? 0.024 : 0.035; s.position.set(d.x[i], d.z[i] + (LAYERS[L].small ? 120 : 250), d.y[i]); s.scale.set(k, k, 1); s.renderOrder = 10; s.userData.placement = i; s.userData.layer = L;
-      this.scene.add(s); this.markers.push(s);
-    }
+    this.markers = this.drop(this.markers);
+    if (!this.layerTex) this.layerTex = LAYERS.map(l => this.icon(g => g.drawImage(S.icons[l.id], 0, 0, 64, 64)));
+    const per = LAYERS.map(() => []), d = S.d;
+    for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L >= 0) per[L].push(i); }
+    per.forEach((list, L) => { if (!list.length) return; const p = this.points(list, LAYERS[L].small ? 120 : 250, this.layerTex[L], LAYERS[L].small ? 20 : 30, 10); p.userData.layer = L; this.markers.push(p); });
     this.applyMarkers();
   },
-  applyMarkers() { for (const s of this.markers) s.visible = S.layerOn[s.userData.layer]; },
+  applyMarkers() { for (const p of this.markers) p.visible = S.layerOn[p.userData.layer]; },
   hitSprites() {
     if (!this.scene) return;
-    for (const s of this.hsprites || []) this.scene.remove(s); this.hsprites = [];
+    this.hsprites = this.drop(this.hsprites);
     if (!this.ready || !S.hits.size) return;
-    if (!this.hitMat) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
-      g.fillStyle = 'rgba(154,208,255,.35)'; g.strokeStyle = '#9ad0ff'; g.lineWidth = 7; g.beginPath(); g.arc(32, 32, 26, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 7, 0, 7); g.fill();
-      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; this.hitMat = new THREE.SpriteMaterial({ map: t, depthTest: false, fog: false, sizeAttenuation: false }); }
-    const d = S.d;
-    for (const i of S.hits) { const s = new THREE.Sprite(this.hitMat); s.position.set(d.x[i], d.z[i] + 150, d.y[i]); s.scale.set(0.026, 0.026, 1); s.renderOrder = 11; s.userData.placement = i; this.scene.add(s); this.hsprites.push(s); }
+    if (!this.hitTex) this.hitTex = this.icon(g => { g.fillStyle = 'rgba(154,208,255,.35)'; g.strokeStyle = '#9ad0ff'; g.lineWidth = 7; g.beginPath(); g.arc(32, 32, 26, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 7, 0, 7); g.fill(); });
+    this.hsprites.push(this.points([...S.hits], 150, this.hitTex, 22, 11));
   },
   missionSprites() {
     if (!this.scene) return;
-    for (const s of this.msprites || []) this.scene.remove(s); this.msprites = [];
+    this.msprites = this.drop(this.msprites);
     if (!this.ready || !M.cur) return;
-    const mats = {}, d = S.d;
-    const mat = k => { if (!mats[k]) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
-      g.fillStyle = STAGE_COLS[k % STAGE_COLS.length]; g.strokeStyle = 'rgba(0,0,0,.65)'; g.lineWidth = 6; g.beginPath(); g.arc(32, 32, 27, 0, 7); g.fill(); g.stroke();
-      g.fillStyle = '#111'; g.font = '800 30px Inter,system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(k + 1), 32, 34);
-      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; mats[k] = new THREE.SpriteMaterial({ map: t, depthTest: false, fog: false, sizeAttenuation: false }); } return mats[k]; };
-    for (const [i, k] of missionPoints()) {
-      const s = new THREE.Sprite(mat(k)); s.position.set(d.x[i], d.z[i] + 180, d.y[i]); s.scale.set(0.03, 0.03, 1); s.renderOrder = 12; s.userData.placement = i;
-      this.scene.add(s); this.msprites.push(s);
+    this.stageTex = this.stageTex || {}; const per = new Map();
+    for (const [i, k] of missionPoints()) { if (!per.has(k)) per.set(k, []); per.get(k).push(i); }
+    for (const [k, list] of per) {
+      if (!this.stageTex[k]) this.stageTex[k] = this.icon(g => { g.fillStyle = STAGE_COLS[k % STAGE_COLS.length]; g.strokeStyle = 'rgba(0,0,0,.65)'; g.lineWidth = 6; g.beginPath(); g.arc(32, 32, 27, 0, 7); g.fill(); g.stroke();
+        g.fillStyle = '#111'; g.font = '800 30px Inter,system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(k + 1), 32, 34); });
+      this.msprites.push(this.points(list, 180, this.stageTex[k], 26, 12));
     }
   },
-  clear() { for (const o of this.groups.concat(this.markers)) { this.scene.remove(o); o.geometry?.dispose(); } this.groups = []; this.markers = []; this.ready = false; },
+  clear() { for (const o of this.groups) { this.scene.remove(o); o.geometry?.dispose(); } this.groups = []; this.markers = this.drop(this.markers); this.hsprites = this.drop(this.hsprites); this.msprites = this.drop(this.msprites); this.ready = false; },
   applyKinds() {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (const im of this.groups) { if (!im.isInstancedMesh) continue; im.userData.placements.forEach((pi, k) => im.setMatrixAt(k, S.on[S.d.kind[pi]] ? ueMatrix(pi) : zero)); im.instanceMatrix.needsUpdate = true; }
@@ -427,7 +436,15 @@ const V3 = {
   mark(i) { if (!this.marker) return; const d = S.d; this.marker.position.set(d.x[i], d.z[i] + 40, d.y[i]); this.marker.visible = true; },
   pick(e) {
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), this.cam);
-    const sp = ray.intersectObjects((this.msprites || []).concat(this.hsprites || [], this.markers.filter(s => s.visible)), false)[0]; if (sp) return select(sp.object.userData.placement);
+    const v = new THREE.Vector3(), d = S.d; let best = -1, bd = Infinity;
+    for (const p of (this.msprites || []).concat(this.hsprites || [], this.markers)) {
+      if (!p.visible) continue; const r2 = (p.userData.size / 2 + 3) ** 2;
+      for (const i of p.userData.list) {
+        v.set(d.x[i], d.z[i], d.y[i]).project(this.cam); if (v.z > 1) continue;
+        const dd = ((v.x + 1) / 2 * innerWidth - e.clientX) ** 2 + ((1 - v.y) / 2 * innerHeight - e.clientY) ** 2; if (dd < r2 && dd < bd) { bd = dd; best = i; }
+      }
+    }
+    if (best >= 0) return select(best);
     const hit = ray.intersectObjects(this.groups.filter(g => g.isInstancedMesh), false)[0];
     if (hit && hit.instanceId !== undefined) select(hit.object.userData.placements[hit.instanceId]);
   },
@@ -440,8 +457,12 @@ const V3 = {
     if (k.has('e')) p.y += sp; if (k.has('q')) p.y -= sp;
     const h = Math.max(0, p.y - (this.z0 || 0)); this.scene.fog.near = 20000 + h; this.scene.fog.far = 120000 + 2.5 * h;
     const near = Math.max(20, h * 0.02); if (Math.abs(near - this.cam.near) > 1) { this.cam.near = near; this.cam.updateProjectionMatrix(); }
-    this.cam.lookAt(p.clone().add(fwd)); this.renderer.render(this.scene, this.cam); this.drawMini();
+    this.cam.lookAt(p.clone().add(fwd));
+    const sig = [p.x, p.y, p.z, this.yaw, this.pitch].join();
+    if (sig === this.sig && !this.dirty) return; this.sig = sig; this.dirty = false;
+    this.cull(h / (innerHeight / 2 / Math.tan(Math.PI / 6))); this.renderer.render(this.scene, this.cam); this.drawMini();
   },
+  cull(unitsPerPx) { for (const g of this.groups) if (g.isInstancedMesh) g.visible = g.userData.r > unitsPerPx * 4; },
   renderTop() {
     if (!this.ortho) { this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600000); this.ortho.up.set(0, 0, -1); }
     const o = this.ortho, hw = C2.W / 2 / C2.sc, hh = C2.H / 2 / C2.sc;
@@ -449,7 +470,7 @@ const V3 = {
     o.position.set(C2.cx, (this.z0 || 0) + 300000, C2.cy); o.lookAt(C2.cx, this.z0 || 0, C2.cy);
     const fog = this.scene.fog, vis = this.markers.concat(this.msprites || [], this.hsprites || [], [this.marker]).map(s => [s, s.visible]);
     this.scene.fog = null; vis.forEach(([s]) => s.visible = false);
-    this.renderer.setSize(innerWidth, innerHeight); this.renderer.render(this.scene, o);
+    this.cull(1 / C2.sc / Math.min(devicePixelRatio, 1.5)); this.renderer.render(this.scene, o); this.dirty = true;
     this.scene.fog = fog; vis.forEach(([s, v]) => s.visible = v);
   },
   miniBox() { const [x0, y0, x1, y1] = bounds(), s = Math.max(x1 - x0, y1 - y0); return [(x0 + x1) / 2 - s / 2, (y0 + y1) / 2 - s / 2, s]; },
@@ -480,7 +501,8 @@ async function setMode(m, focus) {
   try { if (!V3.ready || V3.builtFor !== S.name) { await V3.build(); V3.builtFor = S.name; } } catch (e) { progress(''); status('3D failed: ' + e.message); return; }
   if (focus !== undefined) V3.flyTo(focus);
 }
-window.addEventListener('resize', () => { if (S.mode === '2d') { resize2d(); draw2d(); } else V3.resize(); });
+for (const k of ['applyKinds', 'applyMarkers', 'hitSprites', 'missionSprites', 'mark', 'resize', 'build', 'applyTextures', 'flyTo', 'overview', 'top']) { const f = V3[k]; V3[k] = function (...a) { const r = f.apply(this, a); this.dirty = true; if (r && r.then) r.then(() => this.dirty = true); return r; }; }
+window.addEventListener('resize', () => { if (V3.renderer) V3.resize(); if (S.mode === '2d') { resize2d(); draw2d(); } });
 const API = 'https://api.apbdb.com/beacon/';
 const FACTION_ID = { 1: 'Enforcer', 2: 'Criminal', 3: 'Both' };
 const STAGE_COLS = ['#f2a33a', '#5aa9e6', '#7bd389', '#ff6f91', '#c38fff', '#4fd1c5', '#f7e26b', '#ff8a5c', '#9ad0ff', '#d4a5ff'];

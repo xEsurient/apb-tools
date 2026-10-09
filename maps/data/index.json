@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "districts": [
   {
    "name": "APB_CustomisationSystems",
@@ -7,9 +7,7 @@
    "placements": 53,
    "with_mesh": 5,
    "meshes": 2,
-   "chunks": [
-    0
-   ],
+   "download": 11074,
    "bounds": [
     -20955.1,
     -24876.8128,
@@ -23,9 +21,7 @@
    "placements": 10978,
    "with_mesh": 871,
    "meshes": 428,
-   "chunks": [
-    0
-   ],
+   "download": 8342175,
    "bounds": [
     26453.1,
     34150.8538,
@@ -39,10 +35,7 @@
    "placements": 99297,
    "with_mesh": 4426,
    "meshes": 2378,
-   "chunks": [
-    0,
-    1
-   ],
+   "download": 16467153,
    "bounds": [
     70073.1,
     63711.0696,
@@ -56,11 +49,7 @@
    "placements": 4933,
    "with_mesh": 1236,
    "meshes": 496,
-   "chunks": [
-    0,
-    1,
-    2
-   ],
+   "download": 3261785,
    "bounds": [
     127742.1592,
     104241.5616,
@@ -74,10 +63,7 @@
    "placements": 4600,
    "with_mesh": 658,
    "meshes": 585,
-   "chunks": [
-    0,
-    2
-   ],
+   "download": 3085223,
    "bounds": [
     65648.4738,
     38958.5608,
@@ -91,11 +77,7 @@
    "placements": 6764,
    "with_mesh": 411,
    "meshes": 223,
-   "chunks": [
-    0,
-    1,
-    2
-   ],
+   "download": 3540727,
    "bounds": [
     11776.4,
     16858.5,
@@ -109,11 +91,7 @@
    "placements": 2721,
    "with_mesh": 195,
    "meshes": 129,
-   "chunks": [
-    0,
-    1,
-    2
-   ],
+   "download": 3110157,
    "bounds": [
     -7590.9,
     -113082.59999999999,
@@ -127,12 +105,7 @@
    "placements": 92964,
    "with_mesh": 3683,
    "meshes": 2047,
-   "chunks": [
-    0,
-    1,
-    2,
-    3
-   ],
+   "download": 14859385,
    "bounds": [
     84508.3968,
     56616.7862,
@@ -146,9 +119,7 @@
    "placements": 124,
    "with_mesh": 1,
    "meshes": 1,
-   "chunks": [
-    3
-   ],
+   "download": 8808,
    "bounds": [
     0.0,
     -11815.4,
@@ -181,8 +152,6 @@
   "#5a5a5a",
   "#aa78ff"
  ],
- "chunks": 4,
  "textures": 330,
- "tex_chunks": 1,
  "building_lod": 0
 }
