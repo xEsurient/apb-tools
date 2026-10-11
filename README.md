@@ -158,10 +158,12 @@ lines at once, save with the original encoding).
 
 `stats/` (uses the Text designer's data file). **Tables**: sortable weapon and vehicle stats (TTK, shots to kill,
 damage, rate of fire, magazine, reload, equip, range; vehicle health, speed, cargo, explosion, EMP), with or without
-built-in modifications.
+built-in modifications. Vehicles are grouped by the game's categories (Cars, Trucks, Vans). Sort by clicking a
+column or with the **Sort** control (e.g. lowest or highest TTK, fastest or slowest vehicle).
 
 **Mod comparison**: pick up to three modifications in slot order (the picker shows each mod's icon, grouped by slot)
-and a scope: all weapons, one category (e.g. Sub-Machine Guns) or one weapon; the same for vehicles and vehicle mods.
+and a scope: all weapons, one category (e.g. Sub-Machine Guns, or Cars / Trucks / Vans) or one weapon; the same for vehicles and vehicle mods.
+The cards can be sorted by name or any stat (the value with all picked mods).
 Every item gets a card with its stats with no mods, with the first mod, the first two and all three, so you see what
 each extra slot adds (e.g. Cooling Jacket 3 → + Reflex Sight 3 → + 3-Point Sling 3); changes are marked green (better)
 or red (worse). A **Combined effects** table lists every effect of the chosen mods per step, including the ones the
