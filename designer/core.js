@@ -121,7 +121,7 @@ export function render(value, base = [235, 235, 235]) {
       const opt = m[3] || '', xl = /XL=\s*(-?[\d.]+)/i.exec(opt), yl = /YL=\s*(-?[\d.]+)/i.exec(opt);
       const k = /^Images$/i.test(m[1]) ? 'img' : /^hudtexture$/i.test(m[1]) || /HUDTexture\s*=\s*TRUE/i.test(opt) ? 'tex' : 'icon';
       const w = Math.abs(xl ? +xl[1] : 16), hh = Math.abs(yl ? +yl[1] : 16);
-      html += `<span class="mk-img" data-k="${k}" data-ref="${esc(m[2].trim())}"${tint ? ` data-tint="${tint}"` : ''} title="${esc(m[1] + ':' + m[2])}" style="width:${Math.max(2, w)}px;height:${Math.max(2, hh)}px"></span>`;
+      html += `<span class="mk-img" data-k="${k}" data-ref="${esc(m[2].trim())}"${tint ? ` data-tint="${tint}"` : ''}${!xl && k !== 'icon' ? ' data-auto="1"' : ''} title="${esc(m[1] + ':' + m[2])}" style="width:${Math.max(2, w)}px;height:${Math.max(2, hh)}px"></span>`;
       tint = null; continue;
     }
     if (/^<(Styles|key|Strings|ButtonCallouts)[:][^>]*>$/i.test(p)) { if (/^<key:/i.test(p)) html += `<span class="mk-key">${esc(p.slice(5, -1))}</span>`; continue; }

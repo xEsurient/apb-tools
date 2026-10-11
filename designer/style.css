@@ -105,3 +105,4 @@ button.mini{padding:2px 8px;font-size:11.5px;border-radius:7px}
 .tipbody.orig{position:relative;padding-left:46px}.tipbody.orig::before{content:'game';position:absolute;left:8px;top:9px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .gamebox.streetmap.one{height:56px}.edtip{margin:0}.edtip .tipbody{padding:6px 8px}.edlist{padding:2px 0;border:1px solid #3a3d42;border-radius:4px}.edlist .invtab{cursor:default;margin:2px}
 .edgame{margin-top:6px;opacity:.7}.edgame small{display:block;font-size:10px;margin-bottom:2px}
+.groups .grplist button input[type=checkbox]{margin:0 6px 0 0;flex:none}.groups .grplist button.picked{box-shadow:inset 2px 0 0 var(--acc)}

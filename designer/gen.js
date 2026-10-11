@@ -1,4 +1,4 @@
-import { colourText, wrapColour, hex2rgb, fl } from './core.js';
+import { colourText, wrapColour, hex2rgb, fl, apbTag } from './core.js';
 import { weaponStats, vehicleStats } from './stats.js';
 
 const NL = '↵';
@@ -139,20 +139,27 @@ export const GENS = [
   },
   {
     id: 'mods', group: 'Items', title: 'Modification descriptions', file: 'ModifierItemTypes', kind: 'ui',
-    help: 'Adds the modification\'s effect lines (from ModifierEffects) under its description, optionally with a coloured slot heading.',
-    defaults: { mode: 'desc+effects', head: true, ...gradDefaults('h', '#45ff16', '#0978ff') },
+    help: 'Adds the modification\'s effect lines (from ModifierEffects) under its description, optionally with a coloured slot heading. Effect values keep the game\'s meaning: green = positive, red = negative; pick your own colours for both and for the text.',
+    defaults: { mode: 'desc+effects', head: true, ...gradDefaults('h', '#45ff16', '#0978ff'), pos: '#00ff00', neg: '#ff0000', txt: '#ffffff', keepHi: true, font: '' },
     controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['desc+effects', 'Description + effects'], ['effects', 'Effects']]],
-      ['toggle', 'head', 'Slot heading'], GRAD('h', 'Heading colour')],
+      ['toggle', 'head', 'Slot heading'], GRAD('h', 'Heading colour'),
+      ['colour', 'pos', 'Positive effects'], ['colour', 'neg', 'Negative effects'], ['colour', 'txt', 'Effect text'],
+      ['toggle', 'keepHi', 'Keep special highlights (e.g. Field Supplier)'], ['font', 'font', 'Font']],
     items(D, s) {
+      s = { ...this.defaults, ...s };
       const H = gradOf(s, 'h', 'ui');
+      const rgbOf = t => ['R', 'G', 'B'].map(k => { const m = new RegExp('\\b' + k + '\\s*=\\s*([\\d.]+)', 'i').exec(t); return m ? +m[1] : 0; });
+      const tagFor = c => { const k = c.map(v => Math.round(v * 100) / 100).join(','); return k === '0,1,0' ? s.pos : k === '1,0,0' ? s.neg : k === '1,1,1' ? s.txt : null; };
+      const recolour = l => l.replace(/<Color:([^>]*)>/gi, (m0, a) => { if (a.trim() === '/') return m0; const hx = tagFor(rgbOf(a)); return hx ? apbTag(hex2rgb(hx)) : s.keepHi ? m0 : apbTag(hex2rgb(s.txt)); });
+      const fonted = v => s.font ? `<Fonts:${s.font}>${v}<Fonts:/>` : v;
       return D.mods.map(x => {
         if (s.mode === 'vanilla') return { icon: x.icon, name: x.name, sub: x.cat, key: x.key, orig: x.desc };
         const body = x.desc.replace(/^[^↵]*Modification\s*-\s*↵/i, '');
         const parts = [];
         if (s.head) parts.push(H(x.cat.replace(/_/g, ' ')));
         if (s.mode === 'desc+effects') parts.push(body);
-        if (x.lines.length) parts.push((s.mode === 'desc+effects' ? NL : '') + x.lines.join(NL));
-        return { icon: x.icon, name: x.name, sub: x.cat, key: x.key, orig: x.desc, value: parts.join(NL) };
+        if (x.lines.length) parts.push((s.mode === 'desc+effects' ? NL : '') + x.lines.map(recolour).join(NL));
+        return { icon: x.icon, name: x.name, sub: x.cat, key: x.key, orig: x.desc, value: fonted(parts.join(NL)) };
       });
     }
   },

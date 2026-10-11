@@ -8,9 +8,11 @@ import { folderBar, findLoc, readLoc, onFolder, inGame, hasConfig } from './fold
 import { watch, refUrl, iconSpan } from './assets.js';
 
 let D;
-const TABS = { presets: 'Presets', gen: 'Generators', categories: 'Categories', colours: 'Colours', editor: 'Editor', tables: 'Stat tables' };
+const TABS = { presets: 'Presets', gen: 'Generators', categories: 'Categories', colours: 'Colours', editor: 'Editor' };
 
+if (/^#tables\b/.test(location.hash)) location.replace('../stats/');
 async function main() {
+  if (/^#tables\b/.test(location.hash)) return;
   try { D = await data(); } catch (e) { $('#main').textContent = 'Could not load the game data: ' + e.message; return; }
   setNamed(D.colours);
   $('#folderbar').append(folderBar());
@@ -30,7 +32,7 @@ function route() {
   const t = TABS[tab] ? tab : 'presets';
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('.tab').forEach(x => x.hidden = x.id !== 'tab-' + t);
-  if (!built[t]) { built[t] = true; ({ presets: () => initPresets($('#tab-presets'), D), gen: buildGen, categories: () => initCategories($('#tab-categories'), D), colours: buildColours, editor: () => initEditor($('#tab-editor')), tables: buildTables })[t](); }
+  if (!built[t]) { built[t] = true; ({ presets: () => initPresets($('#tab-presets'), D), gen: buildGen, categories: () => initCategories($('#tab-categories'), D), colours: buildColours, editor: () => initEditor($('#tab-editor')) })[t](); }
   if (t === 'gen') showGen(sub);
 }
 
@@ -141,21 +143,48 @@ function gradCtl(s, p, label, save) {
 function groupsCtl(g, s, save) {
   const groups = g.groups(D), wrap = h('div', { class: 'groups' });
   const ed = h('div', { class: 'grpedit card glass' });
+  const blank = () => ({ on: false, gmode: 'solid', g1: '#ffb000', g2: '#ff3d3d', g3: '#7a5cff', gsteps: 3 });
+  const gsOf = n => s.groups[n] = s.groups[n] || blank();
+  const copyTo = (from, n) => Object.assign(gsOf(n), structuredClone(from));
+  const sel = new Set((s.multi || []).filter(n => groups.some(([x]) => x === n)));
+  const keep = () => { s.multi = [...sel]; save(); };
+  const toggleSel = n => { sel.has(n) ? sel.delete(n) : sel.add(n); keep(); pick(s.sel); };
+  const selectWhere = fn => { sel.clear(); groups.forEach(([n]) => { if (fn(n)) sel.add(n); }); keep(); pick(sel.size ? [...sel][0] : s.sel); };
   const pick = name => {
-    s.sel = name; const gs = s.groups[name] = s.groups[name] || { on: false, gmode: 'solid', g1: '#ffb000', g2: '#ff3d3d', g3: '#7a5cff', gsteps: 3 };
-    ed.innerHTML = ''; ed.append(h('h3', {}, name), toggle('Colour this group', gs.on, v => { gs.on = v; save(); list(); }), gradCtl(gs, 'g', 'Style', () => { gs.on = true; save(); list(); }));
+    s.sel = name;
+    const many = sel.size > 1, targets = () => many ? [...sel] : [name];
+    const st = many ? structuredClone(gsOf(name)) : gsOf(name);
+    const commit = () => { if (many) targets().forEach(n => copyTo(st, n)); save(); list(); };
+    ed.innerHTML = '';
+    ed.append(...[h('h3', {}, many ? `${sel.size} groups selected` : name),
+      many ? h('div', { class: 'hint' }, 'Changes apply to every selected group (starting from ', h('b', {}, name), '\'s style).') : null,
+      toggle(many ? 'Colour these groups' : 'Colour this group', st.on, v => { st.on = v; commit(); }),
+      gradCtl(st, 'g', 'Style', () => { st.on = true; commit(); }),
+      h('div', { class: 'row' }, h('button', { onclick: () => { st.on = true; groups.forEach(([n]) => copyTo(st, n)); save(); pick(name); } }, 'Apply this style to all groups'),
+        !many && sel.size ? h('button', { onclick: () => { st.on = true; [...sel].forEach(n => copyTo(st, n)); save(); pick(name); } }, `Apply to selected (${sel.size})`) : null)].filter(Boolean));
     list();
   };
   const ul = h('div', { class: 'grplist' });
+  let last = null;
   const list = () => {
     ul.innerHTML = '';
-    groups.forEach(([name, cnt]) => {
+    groups.forEach(([name, cnt], idx) => {
       const gs = s.groups[name], sw = gs && gs.on ? (gs.gmode === 'rainbow' ? 'linear-gradient(90deg,red,orange,yellow,lime,cyan,blue,magenta)' : `linear-gradient(90deg,${gs.g1},${gs.gmode === 'solid' ? gs.g1 : gs.g2}${gs.gmode === 'triple' ? ',' + gs.g3 : ''})`) : 'transparent';
-      ul.append(h('button', { class: s.sel === name ? 'on' : '', onclick: () => pick(name) }, h('span', { class: 'gsw', style: `background:${sw}` }), name, h('small', {}, cnt)));
+      const cb = h('input', { type: 'checkbox', checked: sel.has(name), title: 'Select (Ctrl-click a row to toggle, Shift-click for a range)', onclick: e => { e.stopPropagation(); last = idx; toggleSel(name); } });
+      ul.append(h('button', { class: (s.sel === name ? 'on' : '') + (sel.has(name) ? ' picked' : ''), onclick: e => {
+        if (e.shiftKey && last !== null) { const [a, b] = [Math.min(last, idx), Math.max(last, idx)]; for (let k = a; k <= b; k++) sel.add(groups[k][0]); keep(); pick(name); return; }
+        if (e.ctrlKey || e.metaKey) { last = idx; toggleSel(name); return; }
+        last = idx; pick(name);
+      } }, cb, h('span', { class: 'gsw', style: `background:${sw}` }), name, h('small', {}, cnt)));
     });
   };
-  wrap.append(h('div', { class: 'row' }, h('button', { onclick: () => { groups.forEach(([n]) => { const gs = s.groups[n] = s.groups[n] || { on: false, gmode: 'solid', g1: '#ffb000', g2: '#ff3d3d', g3: '#7a5cff', gsteps: 3 }; gs.on = true; }); save(); pick(s.sel); } }, 'Enable all'),
-    h('button', { onclick: () => { Object.values(s.groups).forEach(gs => gs.on = false); save(); pick(s.sel); } }, 'Disable all')), ul, ed);
+  wrap.append(h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Select'),
+      h('button', { class: 'mini', onclick: () => selectWhere(() => true) }, 'All'),
+      h('button', { class: 'mini', onclick: () => selectWhere(n => /^Weapons:/.test(n)) }, 'Weapons'),
+      h('button', { class: 'mini', onclick: () => selectWhere(n => /^Mods:/.test(n)) }, 'Mods'),
+      h('button', { class: 'mini', onclick: () => selectWhere(() => false) }, 'None')),
+    h('div', { class: 'row' }, h('button', { onclick: () => { groups.forEach(([n]) => { gsOf(n).on = true; }); save(); pick(s.sel); } }, 'Enable all'),
+      h('button', { onclick: () => { Object.values(s.groups).forEach(gs => gs.on = false); save(); pick(s.sel); } }, 'Disable all')), ul, ed);
   pick(s.sel || groups[0][0]);
   return wrap;
 }
@@ -223,34 +252,5 @@ function buildColours() {
   root.append(h('div', { class: 'cols2' }, conv, grad), names);
 }
 function copy(text, el) { navigator.clipboard.writeText(text).then(() => { if (!el) return; const o = el.textContent; el.textContent = 'Copied'; setTimeout(() => el.textContent = o, 1000); }); }
-
-function buildTables() {
-  const root = $('#tab-tables'); const st = store.get('tables', { kind: 'weapons', mods: true, test: false, sort: 'ttk', dir: 1, q: '' });
-  const save = () => store.set('tables', st);
-  const q = h('input', { type: 'search', placeholder: 'Filter by name, category or row…', value: st.q, oninput: () => { st.q = q.value; save(); draw(); } });
-  const table = h('div', { class: 'tbl' });
-  const W = [['name', 'Weapon'], ['cat', 'Category'], ['ttk', 'TTK s'], ['stk', 'STK'], ['far', 'STK far'], ['dmg', 'Damage'], ['hard', 'Hard'], ['rpm', 'RPM'], ['mag', 'Mag'], ['ammo', 'Ammo'], ['reload', 'Reload s'], ['equip', 'Equip s'], ['range', 'Range m'], ['mods', 'Built-in mods']];
-  const V = [['name', 'Vehicle'], ['model', 'Model'], ['health', 'Max Health'], ['speed', 'Max Speed m/s'], ['rev', 'Max Reverse Speed m/s'], ['cargo', 'Cargo Capacity'], ['exp', 'Explosion Max Damage'], ['expr', 'Explosion Radius m'], ['emp', 'EMP %', 'EMP Vulnerability (%)'], ['mods', 'Built-in mods']];
-  const rowsW = () => D.weapons.filter(w => w.types[0] && (st.test || !w.test)).map(w => {
-    const s = weaponStats(w.types[0], w.mods, st.mods, D.const), x = s.w;
-    return { name: w.name, cat: w.cat, row: w.row, ttk: s.kind === 'explosive' ? null : +s.ttk.toFixed(3), stk: s.stk, far: s.farStk || null, dmg: +(s.dmg || 0).toFixed(1) + (s.rays > 1 ? ' x' + s.rays : ''), _dmg: (s.dmg || 0) * (s.rays || 1),
-      hard: +(s.hard || 0).toFixed(1), rpm: s.rpm ? Math.round(s.rpm) : null, mag: x.mag, ammo: x.ammo, reload: +x.reload.toFixed(2), equip: +x.equip.toFixed(2), range: x.ramp ? +(x.ramp / 100).toFixed(1) : null, mods: (st.mods ? x.modNames : w.mods.map(m => m.name)).join(', '), lt: w.types[0].ltl && s.kind !== 'explosive' };
-  });
-  const rowsV = () => D.vehicles.filter(v => st.test || !v.test).map(v0 => { const v = vehicleStats(v0, st.mods); return { name: v.name, model: v.model, row: v.row, health: v.health, speed: v.speed, rev: v.rev, cargo: v.cargo, exp: v.exp ? v.exp.dmg : null, expr: v.exp ? +(v.exp.r / 100).toFixed(1) : null, emp: v.emp !== undefined ? Math.round(v.emp * 100) : null, mods: v.modNames.join(', ') }; });
-  const draw = () => {
-    const cols = st.kind === 'weapons' ? W : V, t = st.q.toLowerCase();
-    let rows = (st.kind === 'weapons' ? rowsW() : rowsV()).filter(r => !t || `${r.name} ${r.cat || r.model} ${r.row}`.toLowerCase().includes(t));
-    const sk = st.sort === 'dmg' ? '_dmg' : st.sort;
-    rows.sort((a, b) => { const x = a[sk], y = b[sk]; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y))) * st.dir; });
-    table.innerHTML = '';
-    const head = h('tr', {}, cols.map(([k, l, t]) => h('th', { class: st.sort === k ? 'sorted' : '', title: t || null, onclick: () => { st.dir = st.sort === k ? -st.dir : 1; st.sort = k; save(); draw(); } }, l, st.sort === k ? (st.dir > 0 ? ' ▲' : ' ▼') : '')));
-    const body = rows.slice(0, 1500).map(r => h('tr', { title: r.row }, cols.map(([k]) => h('td', { class: k === 'name' ? 'nm' : '' }, r[k] === null || r[k] === undefined ? '–' : r[k], k === 'ttk' && r.lt ? h('small', { class: 'hint' }, ' stun') : null))));
-    table.append(h('table', { class: 'grid' }, h('thead', {}, head), h('tbody', {}, body)), h('p', { class: 'hint' }, `${rows.length} rows`));
-  };
-  root.append(h('div', { class: 'card glass' }, h('div', { class: 'row' }, seg([['weapons', 'Weapons'], ['vehicles', 'Vehicles']], st.kind, v => { st.kind = v; st.sort = v === 'weapons' ? 'ttk' : 'health'; save(); draw(); }), q,
-    toggle('Built-in modifications', st.mods, v => { st.mods = v; save(); draw(); }), toggle('Gun Game / event items', st.test, v => { st.test = v; save(); draw(); })),
-    h('p', { class: 'hint' }, 'TTK = time from the first to the last shot needed (all pellets hit, no misses, 1000 health / 1000 stamina for less-than-lethal). Burst weapons wait their burst interval after each burst. "STK far" = shots needed at the weapon\'s minimum damage (past its falloff). Hover a row for its design-data row name.'), table));
-  draw();
-}
 
 main();

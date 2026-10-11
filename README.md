@@ -86,8 +86,8 @@ files). Your settings are remembered in the browser.
 |---|---|---|
 | Weapon stats | `WeaponItemTypes` | time/shots to kill (or stun), past-falloff shots, damage, stamina/hard damage, rate of fire, magazine, reload, equip, range, built-in modifications |
 | Vehicle stats | `VehicleItemTypes` | Max Health, Max Speed and Max Reverse Speed (m/s and km/h), Cargo Capacity, Explosion Max Damage, Explosion Radius, EMP Vulnerability (%, Immune at 0), built-in modifications |
-| Item name colours | `InventoryItemTypes` | weapon names coloured by shop category, modification names by slot (solid, stepped, smooth, triple, rainbow, font) |
-| Modification descriptions | `ModifierItemTypes` | slot heading plus the modification's effect lines |
+| Item name colours | `InventoryItemTypes` | weapon names coloured by shop category, modification names by slot (solid, stepped, smooth, triple, rainbow, font); tick several groups (or Select All / Weapons / Mods) to style them together, or apply one style to all groups |
+| Modification descriptions | `ModifierItemTypes` | slot heading plus the modification's effect lines, with your own colours for positive / negative values and the effect text, and a font |
 | Player roles | `PlayerRoles` | every rank with the total needed and its rewards |
 | Role rank titles | `RoleMilestones` | the total needed after each rank title |
 | Contact descriptions | `Contacts` | what each contact level unlocks (standing, items, cash) |
@@ -152,7 +152,23 @@ the weapon stats and name generators; their preview can be hidden with one switc
 
 Other tabs: **Colours** (converter between HEX/RGB/APB tags with the nearest game colour name, gradient maker, all 208
 game colour names), **Editor** (open any INT/GER file or one from your config, search, edit with an in-game preview, recolour or find/replace many
-lines at once, save with the original encoding) and **Stat tables** (sortable weapon and vehicle tables).
+lines at once, save with the original encoding).
+
+## Stat tables
+
+`stats/` (uses the Text designer's data file). **Tables**: sortable weapon and vehicle stats (TTK, shots to kill,
+damage, rate of fire, magazine, reload, equip, range; vehicle health, speed, cargo, explosion, EMP), with or without
+built-in modifications.
+
+**Mod comparison**: pick up to three modifications in slot order (the picker shows each mod's icon, grouped by slot)
+and a scope: all weapons, one category (e.g. Sub-Machine Guns) or one weapon; the same for vehicles and vehicle mods.
+Every item gets a card with its stats with no mods, with the first mod, the first two and all three, so you see what
+each extra slot adds (e.g. Cooling Jacket 3 → + Reflex Sight 3 → + 3-Point Sling 3); changes are marked green (better)
+or red (worse). A **Combined effects** table lists every effect of the chosen mods per step, including the ones the
+stats cannot show (accuracy, handling, steering…), in the game's own wording; values of the same effect multiply.
+Vehicle cards add health against gunfire and against collisions (armour mods). Max Speed includes nitro's top-speed
+bonus as the game states it (+1 / +2 / +3 m/s) and percentage changes such as Steel Plating; mods apply one after
+another in slot order (e.g. 20 m/s + 3 = 23, then −6% = 21.6).
 
 ## Run locally
 
