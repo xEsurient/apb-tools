@@ -1,60 +1,65 @@
-# APB Reloaded tools (web)
+# APB Reloaded tools
 
-Two static web tools for APB Reloaded. There's no server and no build step: they run in the browser and can be
-hosted on GitHub Pages as they are.
+Static fan-made tools for APB Reloaded, served with GitHub Pages:
 
-| Tool | What it does |
-|---|---|
-| [Config merge](config/) | Compares a localisation config (e.g. a German `.GER` pack) with the game's English `INT` files. It adds the missing lines at the right places, optionally adds whole missing files, and gives the config back as a zip with a `SUMMARY.md` of what was added to which file. Your files stay in your browser. |
-| [Map viewer](maps/) | Every district and map in 2D (pan, zoom, search, object details) and 3D (fly through the districts with a 2D minimap). |
+- **Map viewer** (`maps/`): every district in 2D and 3D.
+- **Config merge** (`config/`): keep localisation configs in sync with the game.
+- **Image lookup** (`images/`): find the right image markup for localisation text.
 
-## Using the config merge
-1. **Reference:** pick your game's `APBGame/Localization/INT` folder, or a zip of it. The files are read locally and
-   not uploaded. Without it, item names (`InventoryItemTypes`) can still be checked against
-   [APBDB](https://apbdb.com), whose item list uses the same row names as the game's keys.
-2. **Your config:** pick its zip or folder. Files are paired by name (`APBGame.GER` ↔ `APBGame.int`).
-3. **Compare.** Click a file for a line-by-line list:
-   | Status | Meaning |
-   |---|---|
-   | `added` | missing in your file; the game's English line is inserted |
-   | `duplicate-in-custom` | your file repeats the key |
-   | `only-in-custom` | the key isn't in the game's file: a typo or a custom key, which the game ignores |
-   | `changed` | translated or edited |
-   | `same-text` | same as the reference, possibly untranslated |
-4. **Download the merged config.** The zip keeps the original folders, and the reports are in `_merge_report/`.
+## Config merge
 
-How the merge works:
-- **Placement:** a missing key goes after the nearest preceding key of the same section that your file already has;
-  a missing section is inserted whole.
-- **Nothing else changes:** existing lines stay as they are, along with the file's encoding (UTF-16 with BOM, as the
-  game uses) and line endings.
-- **Repairs:** some stock INT files have damaged UTF-16 line endings. They are repaired when read, and the report
-  says so.
+Pick the game's `APBGame/Localization/INT` folder as the reference and your config as a zip or folder; the page adds
+the lines your files are missing (in English, ready to translate) and gives the merged config back as a zip.
 
-## Using the map viewer
-- **2D:** drag to pan, use the wheel to zoom, and click an object for its details. Search by name, label or class,
-  and tick or untick object kinds.
-- **3D:** drag to look around, use WASD or the arrows to move, Q/E to go down/up, Shift to go faster and the wheel to
-  change speed. The "Top view" and "Overview" buttons reposition the camera; click the minimap to jump there.
-- **Both ways:** "View in 3D" on an object, or a double-click on the 2D map, flies the 3D camera to it.
+**Add the lines the game defines but its INT files leave out** (on by default) also adds 517 lines from the game's
+design data that the game's own INT files lack: mission titles and mission briefs (`MissionTemplates`,
+`TaskObjectives`), the Infected Pumpkin event texts and a few team names. Some belong to test missions; turn the
+option off to compare against the INT files only.
 
-The map data in `maps/data/` comes from the game's own map files:
+## Image lookup
 
-| File | Contents |
-|---|---|
-| `<district>.json` | object placements: position, rotation, scale, class, name, beacon label |
-| `meshes_<n>.bin` | simplified, untextured models: buildings at their second level of detail, 16-bit positions, one colour per material taken from its texture |
-| `meshes.json` | the index of those models |
+Browse every image you can put into APB Reloaded localisation text and copy the exact markup for it.
 
-That comes to about 50 MB for 9 districts, 222,000 placements and 3,990 models.
+- **Images**: textures and materials of the game's UI packages, as `<Images:Package.Group.Name;Resize=TRUE XL=16 YL=16>`.
+- **HUD textures**: named HUD textures, as `<APB_Images:Name;XL=16 YL=16 Resize=TRUE HUDTexture=TRUE>` (UI text files)
+  or `<hudtexture:Name;Resize=TRUE XL=16 YL=16>` (HUD message files).
+- **HUD icons**: named HUD icons built from the icon atlas, as `<APB_Images:Name;…HUDIcon=TRUE>` or `<hudicon:Name;…>`.
+- **Icon atlas**: every 32×32 cell of the HUD icon atlas with the names that use it.
 
-## Hosting
-Push this folder to a GitHub repository and turn on **Settings → Pages → Deploy from a branch** (root). The
-`.nojekyll` file makes GitHub serve the folders as they are. Locally, any static server works, for example
-`python3 -m http.server`, then open http://localhost:8000. Opening the files directly with `file://` doesn't work,
-because browsers block module scripts and data loading there.
+**Animate** (top bar) plays the 49 animated materials and flipbooks in the grid; the **▶ Animated** group lists
+them, and the detail view has its own Play / Pause button. The animations are rendered from each material's node
+graph (time, panning, rotation, pulsing, texture switching) with the game's default parameter values, so they are a
+close approximation, not a capture from the game. Materials the game only animates through values it sets while
+playing (progress circles, hit indicators, the radar compass) stay still.
 
-## Credits and notice
-This is an unofficial fan project. APB Reloaded, its maps, models and texts belong to their owners; the map data is
-derived from the game files for reference. Item names can be loaded live from APBDB. three.js (MIT, `vendor/`) is
-used for the 3D view.
+Click an image to open the line builder (size, `Resize`, optional `<ImageColour:…>` tint, UI text or HUD message
+form), then **Copy to clipboard**. With **Resize** ticked, the preview takes the XL × YL shape, so you can see how stretched the image
+will look. Double-click an image to copy its line with the current settings.
+
+### Which files take which tags
+
+- UI text files (e.g. `APBUserInterface`, item type files, `HudGroupStates`, `HUDMarkerVisualText`):
+  `<Images:>`, `<APB_Images:>`, `<ImageColour:>`.
+- HUD message files (`HUDMessages`, `TaskObjectives`, `PopupDialogs`, `DailyActivityContacts`, …):
+  `<hudtexture:>`, `<hudicon:>`. `<Images:>` does not work there.
+
+Localisation keys must match the game's English (`INT`) key exactly, or the line is ignored.
+
+### Notes
+
+- Images come from the current retail client. HUD texture names, HUD icon names and their atlas layers come from the
+  current client's own design data (3,349 HUD textures, 405 HUD icons), so every name in the list exists in the game
+  and its picture is the one the game uses. Two HUD textures point at effect textures outside the UI packages and
+  have no preview; five HUD icons have no atlas layers and draw nothing.
+- Material previews show the material's main texture; in game the material may animate or tint differently.
+- Atlas cells list the HUD icons that use them. Cells no HUD icon uses only show their atlas layer name (e.g.
+  `Task_Diamond`), which the markup does not accept: icons are only addressable by HUD icon name, and the markup
+  cannot select part of the atlas.
+- With **ImageColour** ticked, every preview is tinted with the chosen colour and alpha (multiplied, like the game).
+
+## Run locally
+
+Any static file server works, e.g. `python3 -m http.server` in this folder, then open http://localhost:8000.
+Opening the pages straight from disk does not work (the browser blocks loading the data files).
+
+Unofficial fan tool. APB Reloaded and all game content belong to their owners.

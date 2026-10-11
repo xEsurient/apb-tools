@@ -32,6 +32,7 @@
       <label class="drop"><input type="file" id="refdir" webkitdirectory multiple>📁 <span>Choose the game folder <b>APBGame/Localization/INT</b></span></label>
       <label class="drop"><input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt">🗜 <span>…or a <b>zip</b> / single files</span></label>
       <label class="opt"><span class="switch on" data-cb="useapbdb"></span>Use <a href="https://apbdb.com" target="_blank">APBDB</a> item names when the reference has no <code>InventoryItemTypes</code></label>
+      <label class="opt"><span class="switch on" data-cb="usesdd"></span>Add the lines the game defines but its INT files leave out (517 lines from the game's design data)</label>
       <span id="refinfo" class="info">No reference chosen: only APBDB item names can be checked.</span></div></section>
     <section class="glass step"><h2><span class="num">2</span>Your config</h2><div class="pick">
       <label class="drop"><input type="file" id="cuszip" accept=".zip" multiple>🗜 <span>Choose your config <b>zip</b></span></label>
@@ -40,7 +41,7 @@
       <label class="opt"><span class="switch" data-cb="addmissing"></span>Also add whole files your config doesn't have</label>
       <span id="cusinfo" class="info">Files are paired with the reference by name (e.g. <code>APBGame.GER</code> ↔ <code>APBGame.int</code>).</span></div></section>
   </div>
-  <input type="checkbox" id="useapbdb" checked hidden><input type="checkbox" id="mark" hidden><input type="checkbox" id="addmissing" hidden>
+  <input type="checkbox" id="useapbdb" checked hidden><input type="checkbox" id="usesdd" checked hidden><input type="checkbox" id="mark" hidden><input type="checkbox" id="addmissing" hidden>
   <div class="bar"><button id="run" class="primary">Compare</button><button id="dlzip" disabled>Download merged config (.zip)</button>
     <button id="dlsum" disabled>Download SUMMARY.md</button><span id="status" class="dim"></span></div>
   <div id="out"></div>

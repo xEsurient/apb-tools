@@ -8,7 +8,29 @@ const stem = n => n.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase();
 const isLoc = n => /\.(int|ger|fra|ita|esn|spa|rus|bra|pol|jpn|cze|hun|ini|txt)$/i.test(n);
 const status = t => $('#status').textContent = t;
 
-let REF = [], CUS = [], RESULT = null;
+let REF = [], CUS = [], RESULT = null, SDD = null;
+async function sddLines() { if (!SDD) SDD = await (await fetch('sddlines.json')).json(); return SDD; }
+function withSdd(text, d) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n', lines = text.split(/\r?\n/), want = d.section.toLowerCase();
+  const pos = new Map(); let sec = '', last = -1;
+  lines.forEach((l, i) => {
+    const t = l.trim();
+    if (t.startsWith('[') && t.endsWith(']')) { sec = t.slice(1, -1).toLowerCase(); if (sec === want && last < 0) last = i; return; }
+    const m = /^([^;=][^=]*?)\s*=/.exec(t);
+    if (sec === want && m) { pos.set(m[1].toLowerCase(), i); last = i; }
+  });
+  const after = new Map(), tail = []; let n = 0;
+  for (const [anchor, key, val] of d.lines) {
+    if (pos.has(key.toLowerCase())) continue;
+    const i = pos.get(anchor.toLowerCase()) ?? last, line = `${key}=${val}`; n++;
+    if (i < 0) tail.push(line); else (after.get(i) || after.set(i, []).get(i)).push(line);
+  }
+  if (!n) return { text, n };
+  const out = [];
+  lines.forEach((l, i) => { out.push(l); if (after.has(i)) out.push(...after.get(i)); });
+  if (tail.length) { if (out.length && out[out.length - 1] === '') out.pop(); out.push(`[${d.section}]`, ...tail, ''); }
+  return { text: out.join(eol), n };
+}
 async function pick(input, which) {
   const files = await readInputs(input.files);
   if (which === 'ref') { REF = files.filter(f => isLoc(f.name)); $('#refinfo').textContent = `${REF.length} reference file(s) loaded.`; }
@@ -26,6 +48,13 @@ $('#run').onclick = async () => {
       refs.set('inventoryitemtypes', { name: `APBDB (${a.items} items)`, text: a.text, enc: 'utf-16le', bom: true, fixed: 0, src: 'apbdb' });
     }
     if (!refs.size) return status('No reference: pick the game\'s INT folder (or enable APBDB for InventoryItemTypes).');
+    if ($('#usesdd').checked) {
+      const sdd = await sddLines();
+      for (const [s, d] of Object.entries(sdd)) {
+        const r = refs.get(s.toLowerCase()); if (!r || r.src !== 'game') continue;
+        const x = withSdd(r.text, d); if (x.n) refs.set(s.toLowerCase(), { ...r, text: x.text, sdd: x.n });
+      }
+    }
     status('comparing…');
     const results = [], merged = new Map();
     for (const f of CUS) {
@@ -36,6 +65,7 @@ $('#run').onclick = async () => {
       if (r.fixed) notes.push(`the reference had ${r.fixed} damaged line end(s) (CR-CRLF in UTF-16), read repaired`);
       if (c.fixed) notes.push(`your file had ${c.fixed} damaged line end(s), repaired in the merged copy`);
       if (r.src === 'apbdb') notes.push('reference built from APBDB item names (DisplayName/CreatorName only)');
+      if (r.sdd) notes.push(`${r.sdd} reference line(s) come from the game's design data: keys the game defines but its INT files leave out`);
       results.push({ path: f.name, ref: r.name, res, notes });
       if (res.merged !== null && (res.added || c.fixed)) merged.set(f.name, encodeText(res.merged, c.enc, c.bom));
     }

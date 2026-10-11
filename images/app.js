@@ -24,19 +24,7 @@ for (const [pkg, rows] of Object.entries(cat.packages))
 const imgAt = (pkg, i) => images.find((x) => x.pkg === pkg && x.i === i);
 const hudtex = cat.hudtex.map(([name, src, ref, how]) => ({ kind: 'tex', name, src, img: ref ? imgAt(ref[0], ref[1]) : null, how, group: name.split('_')[0] }));
 const hudicon = cat.hudicon.map(([name, cells, changed]) => ({ kind: 'icon', name, cells, changed }));
-const cells = cat.cells.map(([r, c, names, changed]) => ({ kind: 'cell', name: `r${r} c${c}`, cells: [[r, c]], names, changed }));
-const PICTURE_GUESSES = [
-  ['Tagger_Valentines', 4, 1], ['Tagger_Duck', 4, 2], ['Tagger_Rapid99', 4, 4], ['Tagger_Sluttles', 4, 5], ['Tagger_Reaper', 4, 6],
-  ['Tagger_PurpleCat', 4, 7], ['Tagger_Cat', 4, 8], ['Tagger_Suit_Spades', 5, 1], ['Tagger_Suit_Hearts', 5, 2], ['Tagger_Suit_Diamond', 5, 3],
-  ['Tagger_Suit_Clubs', 5, 4], ['Tagger_Suit_Joker', 5, 5], ['Minigame_SnowballFight', 5, 15], ['Faction_Criminal_OpenConflict', 24, 1],
-  ['Faction_Enforcer_OpenConflict', 24, 2], ['Minigame_Infection_Pumpkin', 24, 4], ['Mugging_Easter2015_Bunny', 24, 6],
-  ['Mugging_Easter2015_Chicken', 24, 7], ['Minigame_Anarchy', 24, 11], ['Minigame_Anarchy_Provocateur', 24, 12],
-];
-for (const [name, r, c] of PICTURE_GUESSES) {
-  const ic = hudicon.find((x) => x.name === name), cell = cells.find((x) => x.cells[0][0] === r && x.cells[0][1] === c);
-  if (ic && !ic.cells.length) { ic.cells = [[r, c]]; ic.guessed = true; }
-  if (cell && !cell.names.length) { cell.names = [name]; cell.guessed = true; }
-}
+const cells = cat.cells.map(([r, c, names, changed, layers]) => ({ kind: 'cell', name: `r${r} c${c}`, cells: [[r, c]], names, changed, layers: layers || [] }));
 let tintEl = null;
 function applyTint() {
   if (!tintEl) {
@@ -56,9 +44,9 @@ for (const x of images) x.group = x.pkg, x.name = x.path;
 
 const TABS = {
   images: { list: images, groups: true, info: 'Textures and materials of the UI packages, used as <Images:Package.Group.Name>. Works in UI text files (APBUserInterface, item types, HudGroupStates…), not in HUD message files.' },
-  hudtex: { list: hudtex, groups: true, info: 'Named HUD textures (short names for UI package textures). Use <APB_Images:…;HUDTexture=TRUE> in UI text files or <hudtexture:…> in HUD message files (HUDMessages, TaskObjectives, PopupDialogs…). Names marked "guessed" or without a picture come from newer name lists; check them in game.' },
-  hudicon: { list: hudicon, groups: false, info: 'Named HUD icons, drawn from layers of the icon atlas. Use <APB_Images:…;HUDIcon=TRUE> in UI text files or <hudicon:…> in HUD message files. Icons marked "changed" use atlas art that changed since the names were recorded; the picture may not match the name.' },
-  cells: { list: cells, groups: false, info: 'Every 32×32 cell of the HUD icon atlas (APBMenus_Art_HUDIcons.Generic_Icons_Master). Cells with a name can be used as <hudicon:Name>; cells without one have no known name.' },
+  hudtex: { list: hudtex, groups: true, info: 'Named HUD textures (short names for UI package textures). Use <APB_Images:…;HUDTexture=TRUE> in UI text files or <hudtexture:…> in HUD message files (HUDMessages, TaskObjectives, PopupDialogs…). Names and texture paths come from the current game\'s design data.' },
+  hudicon: { list: hudicon, groups: false, info: 'Named HUD icons, drawn from layers of the icon atlas. Use <APB_Images:…;HUDIcon=TRUE> in UI text files or <hudicon:…> in HUD message files. Names and atlas layers come from the current game\'s design data.' },
+  cells: { list: cells, groups: false, info: 'Every 32×32 cell of the HUD icon atlas (APBMenus_Art_HUDIcons.Generic_Icons_Master). Cells with a name can be used as <hudicon:Name>; cells without one are not used by any HUD icon.' },
 };
 
 const st = { tab: 'images', group: null, q: '', shown: PAGE, sel: null, name: null };
@@ -86,7 +74,7 @@ function imgEl(x, play) {
 function preview(x, size, play) {
   if (x.kind === 'img') return imgEl(x, play);
   if (x.kind === 'tex') return imgEl(x.img, play);
-  if (!x.cells.length) { const d = document.createElement('div'); d.className = 'noimg'; d.textContent = 'atlas cell unknown'; return d; }
+  if (!x.cells.length) { const d = document.createElement('div'); d.className = 'noimg'; d.textContent = 'no atlas layers'; return d; }
   return sprite(x.cells, size);
 }
 
@@ -168,7 +156,7 @@ function renderGrid() {
     nm.textContent = x.kind === 'img' ? x.path.slice(x.pkg.length + 1) : x.kind === 'cell' ? (x.names[0] || x.name) : x.name;
     c.title = x.kind === 'cell' ? `${x.name}: ${x.names.join(', ') || 'no known name'}` : x.name;
     c.append(pic, nm);
-    const badge = animOf(x) ? '▶ animated' : x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : x.how === 'guessed' || x.guessed ? 'guessed' : x.changed ? 'changed' : '';
+    const badge = animOf(x) ? '▶ animated' : x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : '';
     if (badge) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = badge; c.append(b); }
     c.onclick = () => select(x);
     c.ondblclick = async () => { select(x); if (await copy(lineFor(x))) flash('Copied'); };
@@ -201,17 +189,16 @@ function select(x) {
       (x.cls === 'TextureFlipBook' ? 'flipbook cells at its frame rate' : 'rendered from the material\'s node graph (an approximation: the game may differ)')]);
   } else if (x.kind === 'tex') {
     if (x.img?.anim) meta.push(['Animation', `${(x.img.anim[1] / 1000).toFixed(2)} s loop (from ${x.img.path})`]);
-    meta.push(['Texture', x.src || 'unknown'], ['Source', x.how === 'sdd' ? 'game design data' : x.how === 'guessed' ? 'matched by name (guessed)' : 'name list only, no texture known']);
+    meta.push(['Texture', x.src || 'unknown'], ['Source', x.img ? 'game design data (current client)' : 'game design data (current client); the texture is not in the UI packages, no preview']);
   } else {
     meta.push(['Atlas cells', x.cells.map(([r, c]) => `row ${r} col ${c}`).join(', ') || 'unknown']);
-    if (x.changed) meta.push(['Note', 'atlas art changed since the name was recorded']);
-    if (x.guessed) meta.push(['Note', 'name matched to this cell by its picture (newer icon, not in the old name lists): check in game']);
+    if (x.kind === 'cell' && x.layers.length) meta.push(['Atlas layer', x.layers.join(', ') + ' (layer name, not usable in markup)']);
   }
   const dl = $('#dmeta'); dl.replaceChildren();
   for (const [k, v] of meta) { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; dl.append(dt, dd); }
   if (x.kind === 'cell') {
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = 'Names';
-    if (!x.names.length) dd.textContent = 'no known name';
+    if (!x.names.length) dd.textContent = 'no HUD icon uses this cell';
     for (const n of x.names) {
       const b = document.createElement('button'); b.textContent = n; b.className = n === st.name ? 'on' : '';
       b.onclick = () => { st.name = n; dd.querySelectorAll('button').forEach((e) => (e.className = e === b ? 'on' : '')); update(); };
@@ -256,8 +243,8 @@ function update() {
   if (x.kind === 'img') notes.push('<Images:> only works in UI text files, not in HUD message files.');
   if (ui && opt.tint) notes.push('ImageColour stays set for the images after it; custom configs reset it with <ImageColour:R=1 G=1 B=1 A=1>. It has no effect on some materials.');
   if (opt.resize) notes.push('Negative XL shifts what follows to the left (draw two images on top of each other); XL=0 stacks the image above the next one.');
-  if (x.kind === 'cell' && !st.name) notes.push('No name is known for this cell. HUD icons can only be used by name (<hudicon:Name> / <APB_Images:Name;HUDIcon=TRUE>), and the markup has no way to pick one cell out of the atlas, so there is no line to copy for it.');
-  if (x.kind === 'icon' && !x.cells.length) notes.push('The name is known but its picture is not: it comes from a newer name list and its atlas cell could not be matched. The line works if the name exists in the game.');
+  if (x.kind === 'cell' && !st.name) notes.push('No HUD icon uses this cell. HUD icons can only be used by name (<hudicon:Name> / <APB_Images:Name;HUDIcon=TRUE>), and the markup has no way to pick one cell out of the atlas, so there is no line to copy for it.');
+  if (x.kind === 'icon' && !x.cells.length) notes.push('The game lists this HUD icon without any atlas layers, so it draws nothing.');
   $('#dnote').textContent = notes.join(' ');
 }
 
