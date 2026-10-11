@@ -1,85 +1,62 @@
-import { $, $$, h, render, seg, toggle, colourPick, colourText, hex2rgb, apbTag, FONTS, buildFile, saveFile, readFile, store } from './core.js';
+import { h, render, seg, toggle, colourPick, colourText, hex2rgb, FONTS, buildFile, saveFile, readFile, store } from './core.js';
+import { imagePicker, imageTag, imageByRef, asSel } from './imgpick.js';
 
-const LISTS = {
-  deploy: { label: 'Deploy · primary weapons', head: 'SELECT PRIMARY WEAPON', help: 'The category tabs of the primary weapon slot when you deploy.' },
-  inventory: { label: 'Inventory · weapons', head: 'INVENTORY · WEAPONS', help: 'The weapon sub-categories of the inventory / storage filter list.' },
-  joker: { label: 'Joker store · weapons', head: 'JOKER DISTRIBUTION · WEAPONS', help: 'The weapon sub-categories of the Joker store reward list.' }
-};
+const HEADS = { deploy: 'SELECT PRIMARY WEAPON', inventory: 'INVENTORY · WEAPONS', joker: 'JOKER DISTRIBUTION · WEAPONS' };
 const CAT_OF = [[/AssaultRifle/, ['Assault Rifles']], [/SubMachineGun/, ['Sub-Machine Guns']], [/SniperRifle/, ['High Velocity Rifles']], [/SemiAutoRifle|_Rifle$/, ['Rifles']],
   [/Shotgun/, ['Shotguns']], [/HeavyMachineGun|LightMachineGun/, ['Light Machine Guns']], [/Explosives/, ['Grenade Launchers', 'Rocket Launchers']],
   [/CrowdControl/, ['Primary Less Than Lethal Weapons']], [/Secondary/, ['Secondary Weapons']], [/Grenade$/, ['Grenades']], [/Christmas/, ['Snowball Launcher', 'Snowball']]];
+const PKG_OF = [[/Cloth|Wardrobe|Armou?r|Belt|Bottom|Eyewear|Footwear|Handwear|Headwear|Jewel|Mask|Overall|Skirt|Top|Underwear|Webbing|Outfit/i, 'APBMenus_Art_ClothingIcons'],
+  [/Vehicle|Car|Truck|Van/i, 'APBMenus_Art_VehicleIcons'], [/FnMod|Modif|Usable|Consum/i, 'APBMenus_Art_UpgradeIcons'], [/Equipment/i, 'APBMenus_Art_EquipmentIcons'], [/Weapon|Ammo|Grenade/i, 'APBMenus_Art_Weapons']];
 const plain = s => String(s).replace(/<[^<>]*>/g, '').trim();
 const pad = n => String(n).padStart(2, '0');
+const weaponsOf = (D, row) => { const cats = (CAT_OF.find(([re]) => re.test(row)) || [0, []])[1]; return D.weapons.filter(w => /Valentine/.test(row) ? /valentine/i.test(w.row + ' ' + w.name) : cats.includes(w.cat)); };
 
-let CAT = null, IDX = null; const BUF = {}, URLS = new Map();
-async function catalog() {
-  if (!CAT) {
-    const c = await (await fetch('../images/data/catalog.json')).json(), out = [];
-    for (const [pkg, list] of Object.entries(c.packages)) {
-      if (pkg !== 'APBMenus_Art_Weapons' && pkg !== 'APBMenus_Art_UpgradeIcons') continue;
-      list.forEach((x, n) => { if (pkg === 'APBMenus_Art_Weapons' || /^Weapons\./.test(x[0])) out.push({ pkg, n, name: x[0], w: x[2], h: x[3], ref: `${pkg}.${x[0]}` }); });
-    }
-    CAT = out;
-  }
-  return CAT;
-}
-async function iconUrl(ic) {
-  const k = `img/${ic.pkg}/${ic.n}`;
-  if (!URLS.has(k)) URLS.set(k, (async () => {
-    if (!IDX) IDX = fetch('../images/data/img_index.json').then(r => r.json());
-    const e = (await IDX)[k]; if (!e) return '';
-    const [f, off, len] = e;
-    let bytes;
-    try {
-      const r = await fetch('../images/data/' + f, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
-      if (r.status === 206) bytes = await r.arrayBuffer();
-      else { BUF[f] = BUF[f] || Promise.resolve(r.arrayBuffer()); bytes = (await BUF[f]).slice(off, off + len); }
-    } catch { return ''; }
-    return URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }));
-  })());
-  return URLS.get(k);
-}
-const iconMarkup = (ic, yl, tint) => ic ? `${tint ? (c => `<ImageColour:R=${(c[0] / 255).toFixed(3).replace(/\.?0+$/, '') || 0} G=${(c[1] / 255).toFixed(3).replace(/\.?0+$/, '') || 0} B=${(c[2] / 255).toFixed(3).replace(/\.?0+$/, '') || 0}>`)(hex2rgb(tint)) : ''}<Images:${ic.ref};Resize=TRUE XL=${Math.round(ic.w / ic.h * yl)} YL=${yl}>` : '';
-
+const allLists = D => D.catLists || Object.entries(D.shopFilters).map(([id, rows]) => ({ id, group: 'Weapons', label: id, file: 'ShopUIFilters', col: 'Name', weapons: 1, rows }));
+const listOf = (D, id) => allLists(D).find(l => l.id === id) || allLists(D)[0];
 const DEFAULT_ST = { list: 'deploy', key: 'F', yl: 16, font: '', lists: {} };
+const keyOf = (st, L) => (st.lists[L.id] && st.lists[L.id].key) || (L.file === 'ShopUIFilters' ? st.key : 'none');
 function listRows(D, st, id) {
-  const base = D.shopFilters[id] || [], saved = st.lists[id] || {};
+  const L = listOf(D, id), base = L.rows, saved = st.lists[L.id] || {};
   const order = saved.order || base.map(r => r.row);
   const known = new Map(base.map(r => [r.row, r]));
   const rows = order.filter(r => known.has(r)).concat(base.map(r => r.row).filter(r => !order.includes(r)));
-  saved.order = rows; saved.items = saved.items || {}; st.lists[id] = saved;
+  saved.order = rows; saved.items = saved.items || {}; st.lists[L.id] = saved;
   rows.forEach(r => { saved.items[r] = saved.items[r] || { text: plain(known.get(r).name) || r, mode: 'none', 1: '#ffb000', 2: '#ff3d3d', 3: '#7a5cff', icon: null }; });
-  return { rows, items: saved.items, known };
+  return { L, rows, items: saved.items, known };
 }
 function catValue(D, st, id, row, idx) {
-  const R = listRows(D, st, id), it = R.items[row], text = it.text || plain(R.known.get(row).name);
+  const R = listRows(D, st, id), it = R.items[row], text = it.text || plain(R.known.get(row).name), key = keyOf(st, R.L);
   const stops = [it[1], it[2]].concat(it.mode === 'triple' ? [it[3]] : []).map(hex2rgb);
-  const shown = (st.key === 'number' ? `${idx + 1}. ` : '') + text;
+  const shown = (key === 'number' ? `${idx + 1}. ` : '') + text;
   const coloured = it.mode === 'none' ? shown : colourText(shown, { mode: it.mode === 'triple' ? 'smooth' : it.mode, stops, kind: 'ui' });
-  const icon = iconMarkup(it.icon, st.yl, it.tint);
-  let v = `${icon}${icon ? ' ' : ''}${coloured}`;
-  if (st.key === 'F') v = `<Color:F=${pad(idx)} A=1>${v}<Color:/>`;
+  const icon = imageTag(it.icon, st.yl, it.tint);
+  let v = it.iconOnly && icon ? icon : `${icon}${icon ? ' ' : ''}${coloured}`;
+  if (key === 'F') v = `<Color:F=${pad(idx)} A=1>${v}<Color:/>`;
   if (st.font) v = `<Fonts:${st.font}>${v}<Fonts:/>`;
   return v;
 }
-function catLines(D, st, id) { return listRows(D, st, id).rows.map((r, i) => [`ShopUIFilters_${r}_Name`, catValue(D, st, id, r, i)]); }
-export function categoryLines(D) {
-  const st = store.get('categories', DEFAULT_ST);
-  return Object.keys(LISTS).filter(k => st.lists && st.lists[k]).flatMap(k => catLines(D, st, k));
+function catLines(D, st, id) { const R = listRows(D, st, id); return R.rows.map((r, i) => [`${R.L.file}_${r}_${R.L.col}`, catValue(D, st, id, r, i)]); }
+function changed(D, st, id) {
+  const s = st.lists && st.lists[id]; if (!s) return false;
+  const L = listOf(D, id), base = L.rows.map(r => r.row);
+  if (s.key || (s.order && s.order.some((r, i) => r !== base[i]))) return true;
+  return L.rows.some(r => { const it = (s.items || {})[r.row]; return it && (it.icon || it.iconOnly || it.mode !== 'none' || (it.text && it.text !== plain(r.name))); });
+}
+export function categoryFiles(D) {
+  const st = store.get('categories', DEFAULT_ST), out = {};
+  for (const L of allLists(D)) if (changed(D, st, L.id)) out[L.file] = (out[L.file] || []).concat(catLines(D, st, L.id));
+  return out;
 }
 
 export function initCategories(root, D) {
   const st = store.get('categories', DEFAULT_ST);
   const save = () => store.set('categories', st);
   const rowsOf = id => listRows(D, st, id);
-  let selected = null, baseFile = null;
-  const panel = h('div', { class: 'invpanel' }), editor = h('div', { class: 'card glass' }), out = h('div', { class: 'card glass' });
-
-  const valueOf = (id, row, idx) => catValue(D, st, id, row, idx);
-  const lines = id => catLines(D, st, id);
+  let selected = null; const baseFiles = {};
+  const panel = h('div', { class: 'invpanel' }), editor = h('div', { class: 'card glass' }), out = h('div', { class: 'card glass' }), opts = h('div');
 
   const draw = () => {
-    const id = st.list, L = LISTS[id], { rows, known } = rowsOf(id);
+    const { L, rows, known, items } = rowsOf(st.list);
     if (!selected || !rows.includes(selected)) selected = rows[0];
     panel.innerHTML = '';
     const tabs = h('div', { class: 'invtabs' });
@@ -91,63 +68,42 @@ export function initCategories(root, D) {
         ondragend: () => el.classList.remove('drag'),
         ondragover: e => { e.preventDefault(); el.classList.add('over'); }, ondragleave: () => el.classList.remove('over'),
         ondrop: e => { e.preventDefault(); const from = e.dataTransfer.getData('text/plain'); move(from, rows.indexOf(r)); } },
-      h('span', { class: 'grip' }, '⋮⋮'), h('span', { class: 'invlabel', html: render(valueOf(id, r, i).replace(/(<ImageColour:[^>]*>)?<Images:[^>]*>/g, '§')) }),
+      h('span', { class: 'grip' }, '⋮⋮'), h('span', { class: 'invlabel', html: render(catValue(D, st, L.id, r, i)) }),
       k.hidden ? h('span', { class: 'badge', title: 'This category has no shop assigned in the game data, so the game normally does not list it.' }, 'hidden') : null,
       h('span', { class: 'arrows' }, h('button', { title: 'Move up', onclick: e => { e.stopPropagation(); move(r, i - 1); } }, '▲'), h('button', { title: 'Move down', onclick: e => { e.stopPropagation(); move(r, i + 1); } }, '▼')));
-      const img = rowsOf(id).items[r].icon;
-      const tint = rowsOf(id).items[r].tint;
-      if (img) iconUrl(img).then(u => { const sp = el.querySelector('.invlabel'); if (sp && u) sp.innerHTML = sp.innerHTML.replace('§', `<span class="tinted" style="height:${st.yl}px;width:${Math.round(img.w / img.h * st.yl)}px"><img src="${u}">${tint ? `<i style="background:${tint};-webkit-mask-image:url(${u});mask-image:url(${u})"></i>` : ''}</span>`); });
-      else { const sp = el.querySelector('.invlabel'); sp.innerHTML = sp.innerHTML.replace('§', ''); }
       tabs.append(el);
     });
-    const cats = (CAT_OF.find(([re]) => re.test(selected)) || [0, []])[1];
-    const items = D.weapons.filter(w => /Valentine/.test(selected) ? /valentine/i.test(w.row + ' ' + w.name) : cats.includes(w.cat)).slice(0, 12);
-    const grid = h('div', { class: 'invgrid' }, items.length ? items.map(w => h('div', { class: 'invitem', html: render(w.name) })) : h('div', { class: 'hint' }, /Primary$/.test(selected) ? 'Every primary weapon.' : 'No sample weapons for this category.'));
-    panel.append(h('div', { class: 'invhead' }, L.head), h('div', { class: 'invbody' }, tabs, grid));
-    drawEditor(); drawOut();
+    let grid;
+    if (L.weapons) {
+      const ws = weaponsOf(D, selected).slice(0, 12);
+      grid = h('div', { class: 'invgrid' }, ws.length ? ws.map(w => h('div', { class: 'invitem', html: render(w.name) })) : h('div', { class: 'hint' }, /Primary$/.test(selected) ? 'Every primary weapon.' : 'No sample weapons for this category.'));
+    } else grid = h('div', { class: 'invgrid' }, h('div', { class: 'hint' }, L.group === 'Marketplace' ? 'Marketplace category names. The same names also show where the game names an item\'s category.' : `${L.group} · ${L.label}`));
+    panel.append(h('div', { class: 'invhead' }, HEADS[L.id] || `${L.group} · ${L.label}`.toUpperCase()), h('div', { class: 'invbody' }, tabs, grid));
+    drawOpts(); drawEditor(); drawOut();
   };
   const move = (row, to) => {
     const { rows } = rowsOf(st.list), from = rows.indexOf(row);
     if (from < 0 || to < 0 || to >= rows.length || from === to) return;
     rows.splice(to, 0, rows.splice(from, 1)[0]); selected = row; save(); draw();
   };
+  const weaponSuggest = async () => {
+    const out = [], seen = new Set();
+    for (const w of weaponsOf(D, selected).concat(D.weapons)) for (const [ref, kind] of [[w.kill, 'kill'], [w.icon, 'icon']]) {
+      if (!ref || seen.has(ref)) continue; seen.add(ref);
+      const x = await imageByRef(ref); if (x) out.push({ ...x, label: `${plain(w.name)} · ${kind}` });
+      if (out.length >= 240) return out;
+    }
+    return out;
+  };
   const drawEditor = () => {
-    const { items, known } = rowsOf(st.list), it = items[selected], k = known.get(selected);
+    const { L, items, known } = rowsOf(st.list), it = items[selected], k = known.get(selected);
     editor.innerHTML = '';
-    const picker = h('div', { class: 'iconpick', hidden: true });
-    const pick = { src: 'cat', type: 'kill', q: '' };
-    const showPicker = async () => {
+    const picker = h('div', { hidden: true });
+    const showPicker = () => {
       picker.hidden = !picker.hidden; if (picker.hidden) return;
-      picker.innerHTML = 'Loading icons…';
-      const list = await catalog(), byRef = new Map(list.map(x => [x.ref, x]));
-      const q = h('input', { type: 'search', placeholder: 'Search weapons or icon names…', oninput: () => { pick.q = q.value; fill(); } }), grid = h('div', { class: 'icongrid' });
-      const cats = (CAT_OF.find(([re]) => re.test(selected)) || [0, []])[1], inCat = w => /Valentine/.test(selected) ? /valentine/i.test(w.row + ' ' + w.name) : cats.includes(w.cat);
-      const choose = x => { it.icon = { pkg: x.pkg, n: x.n, w: x.w, h: x.h, ref: x.ref }; save(); picker.hidden = true; draw(); };
-      const fill = () => {
-        grid.innerHTML = ''; const t = pick.q.toLowerCase(); let cells = [];
-        if (pick.src === 'tex') cells = list.filter(x => !t || x.name.toLowerCase().includes(t)).map(x => ({ x, label: x.name.replace(/^Weapons\./, '') }));
-        else {
-          const seen = new Map();
-          for (const w of D.weapons) {
-            if (pick.src === 'cat' && !inCat(w)) continue;
-            const x = byRef.get(pick.type === 'kill' ? w.kill : w.icon); if (!x) continue;
-            const nm = plain(w.name); if (t && !(nm + ' ' + x.name).toLowerCase().includes(t)) continue;
-            if (seen.has(x.ref)) seen.get(x.ref).more++; else seen.set(x.ref, { x, label: nm, more: 0 });
-          }
-          cells = [...seen.values()].map(c => ({ x: c.x, label: c.label + (c.more ? ` +${c.more}` : '') }));
-        }
-        cells.slice(0, 200).forEach(({ x, label }) => {
-          const im = h('img', { alt: label }); iconUrl(x).then(u => { if (u) im.src = u; });
-          grid.append(h('button', { class: 'iconcell' + (it.icon && it.icon.ref === x.ref ? ' on' : ''), title: x.ref, onclick: () => choose(x) }, im, h('small', {}, label)));
-        });
-        if (!cells.length) grid.append(h('div', { class: 'hint' }, pick.src === 'cat' ? 'No weapons with icons in this category: try "All weapons".' : 'Nothing found.'));
-        else if (cells.length > 200) grid.append(h('div', { class: 'hint' }, `${cells.length - 200} more: narrow the search.`));
-      };
-      const typeSeg = seg([['kill', 'Kill icon'], ['icon', 'Inventory icon']], pick.type, v => { pick.type = v; fill(); });
-      picker.innerHTML = '';
-      picker.append(h('div', { class: 'row' }, seg([['cat', 'Weapons in this category'], ['all', 'All weapons'], ['tex', 'All icon textures']], pick.src, v => { pick.src = v; typeSeg.style.display = v === 'tex' ? 'none' : ''; fill(); }), typeSeg),
-        h('div', { class: 'row' }, q, h('button', { onclick: () => { it.icon = null; save(); picker.hidden = true; draw(); } }, 'No icon')), grid);
-      fill();
+      const pkg = (PKG_OF.find(([re]) => re.test(selected + ' ' + L.label + ' ' + L.group)) || [0, 'APBMenus_Art_Icons'])[1];
+      picker.replaceChildren(imagePicker({ value: it.icon, pkg, suggest: L.weapons ? weaponSuggest : null,
+        onPick: x => { it.icon = x ? { k: x.k, ref: x.ref, w: x.w, h: x.h } : null; save(); picker.hidden = true; draw(); } }));
     };
     const cols = h('div', { class: 'fv' });
     const drawCols = () => {
@@ -156,49 +112,61 @@ export function initCategories(root, D) {
       for (let i = 1; i <= n; i++) cols.append(colourPick('ui', it[i], v => { it[i] = v; save(); draw(); }));
     };
     drawCols();
-    editor.append(h('h3', {}, 'Category'), h('div', { class: 'hint' }, h('code', {}, `ShopUIFilters_${selected}_Name`), k.hidden ? ' · not listed by the game by default' : ''),
+    const icon = asSel(it.icon);
+    editor.append(...[h('h3', {}, 'Category'), h('div', { class: 'hint' }, h('code', {}, `${L.file}_${selected}_${L.col}`), k.hidden ? ' · not listed by the game by default' : ''),
       h('div', { class: 'field' }, h('label', {}, 'Name'), h('input', { type: 'text', value: it.text, oninput: e => { it.text = e.target.value; save(); draw(); } })),
       h('div', { class: 'field' }, h('label', {}, 'Colour'), seg([['none', 'Game default'], ['solid', 'Solid'], ['smooth', 'Smooth'], ['triple', 'Triple'], ['rainbow', 'Rainbow']], it.mode, v => { it.mode = v; save(); drawCols(); draw(); }), cols),
-      h('div', { class: 'field' }, h('label', {}, 'Icon (shown before the name)'), h('div', { class: 'row' }, h('button', { onclick: showPicker }, it.icon ? 'Change icon' : 'Choose icon'), it.icon ? h('code', {}, it.icon.ref) : h('span', { class: 'hint' }, 'none'))), picker,
-      it.icon ? h('div', { class: 'row' }, toggle('Tint the icon', !!it.tint, v => { it.tint = v ? '#ffb000' : null; save(); draw(); }), it.tint ? colourPick('ui', it.tint, v => { it.tint = v; save(); draw(); }) : null,
-        h('span', { class: 'hint' }, 'Tints multiply the picture (<ImageColour:>), so dark icons stay dark.')) : null,
-      h('div', { class: 'row' }, h('button', { title: 'Give every category without an icon the kill icon of one of its weapons', onclick: () => autoIcons() }, 'Default icons for empty categories'),
-        h('button', { onclick: () => { delete st.lists[st.list].items[selected]; save(); draw(); } }, 'Reset this category'),
-        h('button', { onclick: () => { delete st.lists[st.list]; save(); draw(); } }, 'Reset this list')));
+      h('div', { class: 'field' }, h('label', {}, 'Image (shown before the name)'), h('div', { class: 'row' }, h('button', { onclick: showPicker }, icon ? 'Change image' : 'Choose image'), icon ? h('code', {}, icon.ref) : h('span', { class: 'hint' }, 'none'))), picker,
+      icon ? h('div', { class: 'row' }, toggle('Image only (no name)', !!it.iconOnly, v => { it.iconOnly = v; save(); draw(); }), toggle('Tint the image', !!it.tint, v => { it.tint = v ? '#ffb000' : null; save(); draw(); }), it.tint ? colourPick('ui', it.tint, v => { it.tint = v; save(); draw(); }) : null,
+        h('span', { class: 'hint' }, 'Tints multiply the picture (<ImageColour:>), so dark images stay dark.')) : null,
+      h('div', { class: 'row' }, L.weapons ? h('button', { title: 'Give every category without an image the kill icon of one of its weapons', onclick: () => autoIcons() }, 'Default icons for empty categories') : null,
+        h('button', { onclick: () => { delete st.lists[L.id].items[selected]; save(); draw(); } }, 'Reset this category'),
+        h('button', { onclick: () => { delete st.lists[L.id]; save(); draw(); } }, 'Reset this list'))].filter(Boolean));
   };
   const autoIcons = async () => {
-    const list = await catalog(), byRef = new Map(list.map(x => [x.ref, x])), { rows, items } = rowsOf(st.list);
+    const { rows, items } = rowsOf(st.list);
     for (const r of rows) {
-      const cats = (CAT_OF.find(([re]) => re.test(r)) || [0, []])[1];
-      const w = D.weapons.find(w => !w.event && (/Valentine/.test(r) ? /valentine/i.test(w.row + ' ' + w.name) : cats.includes(w.cat)) && byRef.has(w.kill))
-        || D.weapons.find(w => (/Christmas/.test(r) ? cats.includes(w.cat) : false) && byRef.has(w.kill));
-      if (w && !items[r].icon) { const x = byRef.get(w.kill); items[r].icon = { pkg: x.pkg, n: x.n, w: x.w, h: x.h, ref: x.ref }; }
+      if (items[r].icon) continue;
+      for (const w of weaponsOf(D, r).filter(w => !w.event).concat(/Christmas/.test(r) ? weaponsOf(D, r) : [])) {
+        const x = await imageByRef(w.kill); if (x) { items[r].icon = { k: 'img', ref: x.ref, w: x.w, h: x.h }; break; }
+      }
     }
     save(); draw();
   };
   const drawOut = () => {
+    const { L } = rowsOf(st.list), file = L.file;
     out.innerHTML = '';
     const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt' });
-    fileIn.onchange = async () => { const f = fileIn.files[0]; if (f) { baseFile = await readFile(f); drawOut(); } };
-    const ls = lines(st.list);
-    out.append(...[h('h3', {}, 'Output · ShopUIFilters'),
-      h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Optional: your ', h('b', {}, 'ShopUIFilters'), ' file to merge into')),
-      baseFile ? h('div', { class: 'hint' }, `Merging into ${baseFile.name}`) : null,
+    fileIn.onchange = async () => { const f = fileIn.files[0]; if (f) { baseFiles[file] = await readFile(f); drawOut(); } };
+    const ls = catLines(D, st, L.id), base = baseFiles[file];
+    const msg = h('div', { class: 'hint' });
+    out.append(...[h('h3', {}, `Output · ${file}`),
+      h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Optional: your ', h('b', {}, file), ' file to merge into')),
+      base ? h('div', { class: 'hint' }, `Merging into ${base.name}`) : null,
       h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => {
-        const all = Object.keys(LISTS).filter(k => st.lists[k]).flatMap(lines);
-        const r = buildFile('ShopUIFilters', all, baseFile); saveFile(r, baseFile ? baseFile.name : 'ShopUIFilters.GER');
-        msg.textContent = baseFile ? `Saved: ${r.replaced} replaced, ${r.added} added (all lists you edited).` : `Saved ${r.added} lines (all lists you edited).`;
-      } }, 'Download'), h('button', { onclick: e => navigator.clipboard.writeText(ls.map(([k, v]) => `${k}=${v}`).join('\r\n')).then(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy this list', 1200); }) }, 'Copy this list')),
-      h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${v}`).join('\n'))].filter(Boolean));
-    const msg = h('div', { class: 'hint' }); out.append(msg);
+        const all = categoryFiles(D)[file] || ls;
+        const r = buildFile(file, all, base); saveFile(r, base ? base.name : `${file}.GER`);
+        msg.textContent = base ? `Saved: ${r.replaced} replaced, ${r.added} added (all ${file} lists you edited).` : `Saved ${r.added} lines (all ${file} lists you edited).`;
+      } }, `Download ${file}`), h('button', { onclick: e => navigator.clipboard.writeText(ls.map(([k, v]) => `${k}=${v}`).join('\r\n')).then(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy this list', 1200); }) }, 'Copy this list')),
+      h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${v}`).join('\n')), msg].filter(Boolean));
+  };
+  const drawOpts = () => {
+    const { L } = rowsOf(st.list), groups = [];
+    for (const l of allLists(D)) { let g = groups.find(x => x[0] === l.group); if (!g) groups.push(g = [l.group, []]); g[1].push(l); }
+    const edited = id => changed(D, st, id);
+    const setKey = v => { if (L.file === 'ShopUIFilters' && !st.lists[L.id].key) st.key = v; st.lists[L.id].key = v; save(); draw(); };
+    opts.replaceChildren(
+      h('div', { class: 'field' }, h('label', {}, 'List'), h('select', { onchange: e => { st.list = e.target.value; selected = null; save(); draw(); } },
+        groups.map(([g, ls]) => h('optgroup', { label: g }, ls.map(l => h('option', { value: l.id, selected: l.id === L.id }, `${l.label} (${l.rows.length})${edited(l.id) ? ' ✎' : ''}`)))))),
+      h('div', { class: 'field' }, h('label', {}, 'Sort key'), seg([['F', 'Hidden (F=00…)'], ['number', 'Visible numbers (1. 2. …)'], ['none', 'None (game order)']], keyOf(st, L), setKey)),
+      L.file !== 'ShopUIFilters' ? h('p', { class: 'hint' }, 'Marketplace names come from InventoryItemInfraCategories. Whether the marketplace sorts them by name is untested, so the sort key is off by default.') : null);
   };
 
   const top = h('div', { class: 'card glass' },
-    h('h3', {}, 'Weapon categories'),
-    h('p', { class: 'hint' }, 'Drag the categories (or use ▲ ▼) into the order you want, rename them, colour them and give them an icon. The lists sort categories by their name text, so each name starts with an invisible sort key (', h('code', {}, '<Color:F=00 A=1>'), ', ', h('code', {}, 'F=01'), ' …), the method the community configs use. Valentines and Christmas are included: the game data gives them no shop, so they normally do not show up; their names and order still apply if the game lists them.'),
-    h('div', { class: 'field' }, h('label', {}, 'List'), seg(Object.entries(LISTS).map(([k, v]) => [k, v.label]), st.list, v => { st.list = v; selected = null; save(); draw(); })),
-    h('div', { class: 'field' }, h('label', {}, 'Sort key'), seg([['F', 'Hidden (F=00…)'], ['number', 'Visible numbers (1. 2. …)'], ['none', 'None (game order)']], st.key, v => { st.key = v; save(); draw(); })),
-    h('div', { class: 'row' }, h('label', { class: 'hint' }, 'Icon height'), h('input', { type: 'number', min: 8, max: 32, value: st.yl, style: 'width:70px', oninput: e => { st.yl = +e.target.value || 16; save(); draw(); } }),
+    h('h3', {}, 'Categories'),
+    h('p', { class: 'hint' }, 'Every category list of the game: weapon tabs, wardrobe clothing types, inventory, Fixer, deploy, armory and Joker store filters, and the marketplace names. Drag the categories (or use ▲ ▼) into the order you want, rename them, colour them and put an image in front (or use the image alone). Filter lists sort categories by their name text, so each name starts with an invisible sort key (', h('code', {}, '<Color:F=00 A=1>'), ', ', h('code', {}, 'F=01'), ' …), the method the community configs use. Lists marked ✎ have changes; Download writes every list you changed in that file.'),
+    opts,
+    h('div', { class: 'row' }, h('label', { class: 'hint' }, 'Image height'), h('input', { type: 'number', min: 8, max: 32, value: st.yl, style: 'width:70px', oninput: e => { st.yl = +e.target.value || 16; save(); draw(); } }),
       h('label', { class: 'hint' }, 'Font'), h('select', { onchange: e => { st.font = e.target.value; save(); draw(); } }, h('option', { value: '' }, 'Game default'), FONTS.map(f => h('option', { value: f, selected: st.font === f }, f.split('.').pop().replace(/_/g, ' '))))));
   root.append(top, h('div', { class: 'catlayout' }, panel, h('div', {}, editor, out)));
   draw();

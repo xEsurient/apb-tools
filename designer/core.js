@@ -175,13 +175,43 @@ export function toggle(label, value, onChange, title) {
   const sw = h('span', { class: 'switch' + (value ? ' on' : '') });
   return h('label', { class: 'opt', title, onclick: e => { e.preventDefault(); value = !value; sw.classList.toggle('on', value); onChange(value); } }, sw, label);
 }
+const lum = c => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+const namedRow = (n, label) => {
+  const c = n ? n.rgba.slice(0, 3) : null, hex = c ? rgb2hex(c) : '';
+  return [h('span', { class: 'cswatch', style: c ? `background:${hex}` : 'background:repeating-linear-gradient(45deg,#666 0 3px,#333 3px 6px)' }),
+    h('span', { class: 'nsname' + (c && lum(c) < 0.12 ? ' dark' : ''), style: c ? `color:${hex}` : '' }, label)];
+};
+export function namedSelect({ value, list, onChange, extra = [] }) {
+  const find = v => list.find(n => n.name === v);
+  const wrap = h('span', { class: 'nsel' }), btn = h('button', { type: 'button', class: 'nsbtn' }), pop = h('div', { class: 'nspop', hidden: true });
+  const q = h('input', { type: 'search', placeholder: 'Search colours…' }), ul = h('div', { class: 'nslist' });
+  const label = v => { const e = extra.find(x => x[0] === v); return e ? namedRow(null, e[1]) : namedRow(find(v), v); };
+  const setBtn = () => btn.replaceChildren(...label(value), h('span', { class: 'nscaret' }, '▾'));
+  const pick = v => { value = v; setBtn(); close(); onChange(v); };
+  const fill = () => {
+    const t = q.value.toLowerCase().trim();
+    const seen = new Set();
+    ul.replaceChildren(...extra.filter(([, l]) => !t || l.toLowerCase().includes(t)).map(([v, l]) => h('button', { type: 'button', class: 'nsopt' + (v === value ? ' on' : ''), onclick: () => pick(v) }, ...namedRow(null, l))),
+      ...list.filter(n => (!t || n.name.toLowerCase().includes(t)) && !seen.has(n.name) && seen.add(n.name)).map(n => h('button', { type: 'button', class: 'nsopt' + (n.name === value ? ' on' : ''), title: n.name, onclick: () => pick(n.name) }, ...namedRow(n, n.name))));
+  };
+  const outside = e => { if (!wrap.contains(e.target) && !pop.contains(e.target)) close(); };
+  const onScroll = e => { if (!pop.contains(e.target)) close(); };
+  const close = () => { pop.hidden = true; pop.remove(); document.removeEventListener('mousedown', outside); window.removeEventListener('scroll', onScroll, true); };
+  btn.onclick = () => {
+    if (!pop.hidden) return close();
+    const r = btn.getBoundingClientRect(), below = window.innerHeight - r.bottom;
+    pop.style.left = `${Math.min(r.left, window.innerWidth - 290)}px`;
+    if (below < 360 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 4}px`; } else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 4}px`; }
+    document.body.append(pop); pop.hidden = false; q.value = ''; fill(); q.focus(); const on = ul.querySelector('.on'); if (on) on.scrollIntoView({ block: 'center' });
+    document.addEventListener('mousedown', outside); window.addEventListener('scroll', onScroll, true);
+  };
+  q.oninput = fill;
+  q.onkeydown = e => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const f = ul.querySelector('.nsopt'); if (f) f.click(); } };
+  pop.append(q, ul); wrap.append(btn); setBtn();
+  return wrap;
+}
 export function colourPick(kind, value, onChange) {
-  if (kind === 'hud') {
-    const s = h('select', { class: 'cpick', onchange: () => { sw.style.background = rgb2hex(namedRgb(s.value) || [255, 255, 255]); onChange(s.value); } },
-      NAMED.filter(n => n.rgba[3] > 0).map(n => h('option', { value: n.name, selected: n.name === value }, n.name)));
-    const sw = h('span', { class: 'cswatch', style: `background:${rgb2hex(namedRgb(value) || [255, 255, 255])}` });
-    return h('span', { class: 'cpickwrap' }, sw, s);
-  }
+  if (kind === 'hud') return namedSelect({ value, list: NAMED.filter(n => n.rgba[3] > 0), onChange });
   const inp = h('input', { type: 'color', value, oninput: () => { t.value = inp.value; onChange(inp.value); } });
   const t = h('input', { type: 'text', value, class: 'hex', oninput: () => { const c = hex2rgb(t.value); if (c) { inp.value = rgb2hex(c); onChange(inp.value); } } });
   return h('span', { class: 'cpickwrap' }, inp, t);

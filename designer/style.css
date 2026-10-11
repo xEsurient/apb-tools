@@ -96,3 +96,12 @@ button.mini{padding:2px 8px;font-size:11.5px;border-radius:7px}
 .tip.hud .tiphead{background:rgba(0,0,0,.45)}.tip.hud .tipbody{text-shadow:0 1px 2px #000,0 0 1px #000}
 .gamebox.hud{background:linear-gradient(rgba(8,10,14,.5),rgba(8,10,14,.7)),var(--hudbg,#1b1d21) center/cover;text-shadow:0 1px 2px #000}
 .gamebox.map{background:linear-gradient(rgba(0,0,0,.15),rgba(0,0,0,.25)),var(--mapbg,#2a2d22) 38% 42%/260% auto;text-shadow:0 0 2px #000,0 0 3px #000;min-height:52px}
+.gamebox.streetmap{position:relative;height:120px;padding:0;overflow:hidden}.streetmap .lbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;line-height:16px;display:flex;align-items:center;gap:3px}
+.nsel{position:relative;display:inline-block}.nsbtn{display:inline-flex;align-items:center;gap:7px;min-width:180px;max-width:260px;padding:5px 9px;text-align:left}.nsbtn .nsname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nscaret{color:var(--dim);font-size:11px}
+.nspop{position:fixed;z-index:1000;width:280px;background:#15171b;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.55);padding:6px}.nspop input{width:100%;box-sizing:border-box;margin-bottom:6px}
+.nslist{max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:1px}.nsopt{display:flex;align-items:center;gap:8px;border:0;background:none;padding:4px 6px;border-radius:6px;text-align:left;justify-content:flex-start;font-size:12.5px}.nsopt:hover,.nsopt.on{background:rgba(255,255,255,.07)}.nsopt.on{box-shadow:inset 2px 0 0 var(--acc)}
+.nsname{font-weight:600}.nsname.dark{background:rgba(235,235,235,.9);padding:0 5px;border-radius:4px}
+.tipbody.mine{border-top:1px dashed rgba(242,163,58,.5);position:relative;padding-left:46px}.tipbody.mine::before{content:'yours';position:absolute;left:8px;top:9px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);opacity:.8}.tipbody.mine.none{opacity:.6}
+.tipbody.orig{position:relative;padding-left:46px}.tipbody.orig::before{content:'game';position:absolute;left:8px;top:9px;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.gamebox.streetmap.one{height:56px}.edtip{margin:0}.edtip .tipbody{padding:6px 8px}.edlist{padding:2px 0;border:1px solid #3a3d42;border-radius:4px}.edlist .invtab{cursor:default;margin:2px}
+.edgame{margin-top:6px;opacity:.7}.edgame small{display:block;font-size:10px;margin-bottom:2px}

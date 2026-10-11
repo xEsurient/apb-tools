@@ -70,6 +70,12 @@ still ask to confirm "uploading" the folder: it only means the page may read it)
 and Presets merge into your GER files automatically (a file without a GER copy starts from the game's full English
 INT file and is saved as GER), and the Editor lists every INT/GER file to open.
 
+**Your config** (next to it): pick your config zip (or loose INT/GER files). Its files win over the game folder, the
+same way your GER files win over the game's INT text in game. With a config or folder set, the page previews what you
+have in game: Generators show your current line under each new one ("yours"), Presets show your text for files left on
+Game default, and the Editor lists your files and previews each line in its in-game context (HUD bar, map labels,
+tooltip, filter list, chat), optionally with the game's default line underneath.
+
 Builds localisation text from the game's own item, role, contact and mission data, so the numbers match the game.
 The data file (`designer/data.json`) is kept current by a weekly GitHub Action that pulls [APBDB](https://apbdb.com) (`.github/workflows/sync-apbdb.yml`, also runnable by hand from the Actions tab with
 "force"); the page shows which APBDB version it holds. Pick a generator, set it up, optionally pick your own file to merge into, then **Download**. Changed lines
@@ -79,7 +85,7 @@ files). Your settings are remembered in the browser.
 | Generator | File | What it writes |
 |---|---|---|
 | Weapon stats | `WeaponItemTypes` | time/shots to kill (or stun), past-falloff shots, damage, stamina/hard damage, rate of fire, magazine, reload, equip, range, built-in modifications |
-| Vehicle stats | `VehicleItemTypes` | health, top/reverse speed (m/s and km/h), cargo, explosion, built-in modifications |
+| Vehicle stats | `VehicleItemTypes` | Max Health, Max Speed and Max Reverse Speed (m/s and km/h), Cargo Capacity, Explosion Max Damage, Explosion Radius, EMP Vulnerability (%, Immune at 0), built-in modifications |
 | Item name colours | `InventoryItemTypes` | weapon names coloured by shop category, modification names by slot (solid, stepped, smooth, triple, rainbow, font) |
 | Modification descriptions | `ModifierItemTypes` | slot heading plus the modification's effect lines |
 | Player roles | `PlayerRoles` | every rank with the total needed and its rewards |
@@ -108,12 +114,15 @@ colour (a game colour name such as `Valentine_Pink`, or any hex code), a friendl
 feed), and themes every file with them: current mission stage, daily values, kill and rank lines, equipment, HUD
 highlights and combat names. **Fine-tune** on a file opens its generator with those settings for detailed changes; the
 file then uses your Generators-tab settings ("My settings"). Other bundles: Clean stock, Designer default, six colour sets
-in the style of iazer's APB CFG Loader (Dark Blue/Dark Red, Green/Red, Grey/White, Light Pink, Hot Pink, Purple) and
-the writch style. Every file can then be switched on its own: daily activities, mission briefs (stage list, stage chain
-with item sizes, "Current Stage / Next Stage", "Current | Next | … until the last stage"), mission titles with the
-equipment needed (as names or as the game's equipment icons), weapon and vehicle stat sheets, role ranks, item name colours, weapon categories (your layout from
-the Weapon categories tab), HUD and combat messages, one-letter chat tags, objective names and street/block/beacon
-names. The **Event: show street names** switch turns street, block and beacon names back on over any preset (handy
+in the style of iazer's APB CFG Loader (Navy / Dark Red, Green / Red, Black / White, Pink / White, Red / White, Blue / White, named by their actual colours) and
+the writch style. Every file can then be switched on its own; **Preset** follows the selected bundle, so the
+same choice gives the designer, iazer or writch look depending on the bundle. Files: daily activities, mission briefs (stage list, stage chain
+with item sizes, "Current / Next", labels in white), mission titles as Title [Equipment] or
+Title [Equipment Icons], weapon and vehicle stat sheets, role ranks, item name colours, categories (your layout from
+the Categories tab), HUD and combat messages (kill-feed names in the bundle's friendly / enemy colours, highlights and
+error messages in its main colour), one-letter chat tags, objective names and street/block/beacon names (small font,
+a HUD icon in place of the name like writch's config, a **Custom image** from the image picker with or
+without the name, or hidden). The street preview places street, block and beacon labels on a map at game size. The **Event: show street names** switch turns street, block and beacon names back on over any preset (handy
 for finding the next pumpkin in the Halloween event), in white, the iazer small font, the bundle colour or your own
 colour, opacity and font. The styles are recreated from the game's own text and data; no file from those packs is
 included. Pick your config zip to merge into. Every file is written as UTF-16 with its `[Section]` header (some
@@ -123,22 +132,26 @@ Mission stage lists name every objective the way the community configs do (Captu
 Item Hold, Car Theft, Car Loot, Hack, Invest, …); the **Wording** switch selects the iazer / writch words instead (Drop,
 Area, Investigate, Spray, Vandal).
 
-**Weapon categories**: lay out the weapon category lists of the deploy screen (primary weapons), the inventory and the
-Joker store on an inventory-style panel. Drag the categories (or use ▲ ▼) into your order, rename them, colour them
-(solid, smooth, triple, rainbow) and prefix each with a weapon icon. The icon picker lists the weapons of that category
-(or all weapons) by name with their kill-feed or inventory icon, or every weapon icon texture; an icon can be tinted
-(`<ImageColour:>`, multiplies the picture) and **Default icons for empty categories** fills the rest in one click.
-Sample weapons of the selected category are shown next to the list. The lists sort categories by their name text, so every name starts with an invisible sort
+**Categories**: every category list of the game on an inventory-style panel: weapon tabs (deploy, inventory, Joker),
+wardrobe clothing types (Belts: High / Loose / Low …), inventory, Fixer, deploy, armory and Joker store filters
+(`ShopUIFilters`) and the marketplace names (`InventoryItemInfraCategories`, published rows). Drag the categories (or
+use ▲ ▼) into your order, rename them, colour them (solid, smooth, triple, rainbow) and put an image in front of each,
+or use the image alone. The image picker offers HUD icons and HUD textures (written as `<APB_Images:…>`) and every
+package image (`<Images:…>`, by package or search); weapon lists also suggest the kill-feed and inventory icons of
+their weapons. Images can be tinted (`<ImageColour:>`, multiplies the picture); **Default icons for empty categories**
+fills weapon lists in one click. Sample weapons of the selected weapon category are shown next to the list. The lists sort categories by their name text, so every name starts with an invisible sort
 key, `<Color:F=00 A=1>`, `<Color:F=01 A=1>` … (the colour tag ignores `F=`; the same method the community configs
 use), or with visible numbers if you prefer. The Valentines and Christmas categories are included; the game gives them
-no shop, so they normally do not appear. Download writes `ShopUIFilters` (merged into your file if you pick one) with
-every list you edited.
+no shop, so they normally do not appear. Download writes the list's file (`ShopUIFilters` or
+`InventoryItemInfraCategories`, merged into your file if you pick one) with every list of that file you changed (marked
+✎). Whether the marketplace sorts by name is untested, so its sort key is off by default; marketplace names may also
+show where the game names an item's category.
 
 Gun Game and event weapons (Legacy and Gun Game sets, snowball and egg launchers, Ghostly Flare Gun, …) are part of
 the weapon stats and name generators; their preview can be hidden with one switch.
 
 Other tabs: **Colours** (converter between HEX/RGB/APB tags with the nearest game colour name, gradient maker, all 208
-game colour names), **Editor** (open any INT/GER file, search, edit with live preview, recolour or find/replace many
+game colour names), **Editor** (open any INT/GER file or one from your config, search, edit with an in-game preview, recolour or find/replace many
 lines at once, save with the original encoding) and **Stat tables** (sortable weapon and vehicle tables).
 
 ## Run locally

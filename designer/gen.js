@@ -27,7 +27,7 @@ function joinDesc(s, stats, orig) {
   if (s.mode === 'stats+desc' && orig) parts.push('', orig);
   return parts.join(NL);
 }
-const MODE = ['seg', 'mode', 'Description', [['vanilla', 'Vanilla', 'Keep the game\'s description'], ['stats', 'Stats only'], ['stats+desc', 'Stats + description'], ['desc+stats', 'Description + stats']]];
+const MODE = ['seg', 'mode', 'Description', [['vanilla', 'Vanilla', 'Keep the game\'s description'], ['stats', 'Stats'], ['stats+desc', 'Stats + description'], ['desc+stats', 'Description + stats']]];
 
 export const ACT_WORDS = [[/arrest/i, 'arrests'], [/stun/i, 'stuns'], [/kill|takeout/i, 'kills'], [/deliver/i, 'deliveries'], [/won|win/i, 'wins'],
   [/graffiti/i, 'tags'], [/hack/i, 'hacks'], [/score/i, 'points'], [/played|games/i, 'games'], [/mission/i, 'missions'], [/egg/i, 'eggs'],
@@ -49,7 +49,7 @@ export const GENS = [
     help: 'Writes each weapon\'s description with stats computed from the game\'s own weapon tables, including the weapon\'s built-in modifications.',
     defaults: { mode: 'stats+desc', useMods: true, label: '#d0d0d0', value: '#ffffff', hi: '#ffb000', dec: 3, hideTest: false,
       show: { ttk: true, stk: true, far: true, dmg: true, stam: true, hard: true, rpm: true, fire: false, mag: true, reload: true, equip: true, range: true, mods: true } },
-    controls: [MODE, ['toggle', 'useMods', 'Apply built-in modifications (e.g. Speed Demon Special, 3-Point Sling)'],
+    controls: [MODE, ['toggle', 'useMods', 'Apply built-in mods'],
       ['colour', 'label', 'Label colour'], ['colour', 'value', 'Value colour'], ['colour', 'hi', 'Kill line colour'],
       ['seg', 'dec', 'Decimals', [[2, '0.00'], [3, '0.000']]],
       ['checks', 'show', 'Lines', [['ttk', 'Time to kill'], ['stk', 'Shots to kill'], ['far', 'At max falloff'], ['dmg', 'Damage'], ['stam', 'Stamina damage'], ['hard', 'Hard damage'],
@@ -91,24 +91,27 @@ export const GENS = [
   },
   {
     id: 'vehicles', group: 'Items', title: 'Vehicle stats', file: 'VehicleItemTypes', kind: 'ui',
-    help: 'Health, speed, cargo and explosion values from the game\'s vehicle setup table; cargo includes built-in cargo modifications.',
+    help: 'Health, speed, cargo, explosion and EMP values from the game\'s vehicle setup table; cargo includes built-in cargo modifications.',
     defaults: { mode: 'stats+desc', useMods: true, label: '#d0d0d0', value: '#ffffff', hi: '#ffb000', kmh: true, hideTest: false,
-      show: { health: true, speed: true, rev: true, cargo: true, exp: true, ram: false, mods: true } },
-    controls: [MODE, ['toggle', 'useMods', 'Apply built-in modifications'], ['toggle', 'kmh', 'Speeds also in km/h'],
+      show: { health: true, speed: true, rev: true, cargo: true, exp: true, expr: true, emp: true, ram: false, mods: true } },
+    controls: [MODE, ['toggle', 'useMods', 'Apply built-in mods'], ['toggle', 'kmh', 'Speeds also in km/h'],
       ['colour', 'label', 'Label colour'], ['colour', 'value', 'Value colour'], ['colour', 'hi', 'Health line colour'],
-      ['checks', 'show', 'Lines', [['health', 'Health'], ['speed', 'Top speed'], ['rev', 'Reverse speed'], ['cargo', 'Cargo'], ['exp', 'Explosion'], ['ram', 'Ram-raid multiplier'], ['mods', 'Built-in mods']]],
+      ['checks', 'show', 'Lines', [['health', 'Max Health'], ['speed', 'Max Speed'], ['rev', 'Max Reverse Speed'], ['cargo', 'Cargo Capacity'], ['exp', 'Explosion Max Damage'], ['expr', 'Explosion Radius'], ['emp', 'EMP Vulnerability'], ['ram', 'Ram-raid multiplier'], ['mods', 'Built-in mods']]],
       ['toggle', 'hideTest', 'Hide event vehicles in the preview']],
     items(D, s) {
       const L = lineMaker(s, 'ui'), sp = v => `${n(v, 1)} m/s${s.kmh ? ` (${Math.round(v * 3.6)} km/h)` : ''}`;
       return D.vehicles.map(v0 => {
         const v = vehicleStats(v0, s.useMods), out = [];
-        if (s.show.health) out.push(L('Health', v.health, true));
-        if (s.show.speed) out.push(L('Top speed', sp(v.speed)));
-        if (s.show.rev) out.push(L('Reverse speed', sp(v.rev)));
-        if (s.show.cargo) out.push(L('Cargo capacity', v.cargo));
-        if (s.show.exp && v.exp) out.push(L('Explosion', `${v.exp.dmg} damage, ${n(v.exp.r / 100, 1)} m radius`));
-        if (s.show.ram) out.push(L('Ram-raid multiplier', `x${n(v.ram, 2)}`));
-        if (s.show.mods && v.modNames.length) out.push(L('Built-in', v.modNames.join(', ')));
+        const sh = { ...this.defaults.show, ...s.show };
+        if (sh.health) out.push(L('Max Health', v.health, true));
+        if (sh.speed) out.push(L('Max Speed', sp(v.speed)));
+        if (sh.rev) out.push(L('Max Reverse Speed', sp(v.rev)));
+        if (sh.cargo) out.push(L('Cargo Capacity', v.cargo));
+        if (sh.exp && v.exp) out.push(L('Explosion Max Damage', v.exp.dmg));
+        if (sh.expr && v.exp) out.push(L('Explosion Radius', `${n(v.exp.r / 100, 1)} m`));
+        if (sh.emp && v.emp !== undefined) out.push(L('EMP Vulnerability', v.emp ? `${Math.round(v.emp * 100)}%` : 'Immune'));
+        if (sh.ram) out.push(L('Ram-raid multiplier', `x${n(v.ram, 2)}`));
+        if (sh.mods && v.modNames.length) out.push(L('Built-in', v.modNames.join(', ')));
         return { icon: v.icon, name: v.name, sub: v.model, key: v.key, orig: v.desc, test: v.test, value: joinDesc(s, out, v.desc) };
       });
     }
@@ -138,8 +141,8 @@ export const GENS = [
     id: 'mods', group: 'Items', title: 'Modification descriptions', file: 'ModifierItemTypes', kind: 'ui',
     help: 'Adds the modification\'s effect lines (from ModifierEffects) under its description, optionally with a coloured slot heading.',
     defaults: { mode: 'desc+effects', head: true, ...gradDefaults('h', '#45ff16', '#0978ff') },
-    controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['desc+effects', 'Description + effects'], ['effects', 'Effects only']]],
-      ['toggle', 'head', 'Slot heading (e.g. "Weapon Barrel")'], GRAD('h', 'Heading colour')],
+    controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['desc+effects', 'Description + effects'], ['effects', 'Effects']]],
+      ['toggle', 'head', 'Slot heading'], GRAD('h', 'Heading colour')],
     items(D, s) {
       const H = gradOf(s, 'h', 'ui');
       return D.mods.map(x => {
@@ -157,9 +160,9 @@ export const GENS = [
     id: 'roles', group: 'Progression', title: 'Player roles', file: 'PlayerRoles', kind: 'ui',
     help: 'Writes the rank list into each role\'s description: what each rank needs, the running total for the whole role, and the rewards.',
     defaults: { mode: 'desc+ranks', rank: '#ffb000', value: '#ffffff', total: '#a0a0a0', unlock: '#a0a0a0', showTotal: true, cash: true, hideAch: false },
-    controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['ranks', 'Ranks only'], ['desc+ranks', 'Description + ranks']]],
+    controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['ranks', 'Ranks'], ['desc+ranks', 'Description + ranks']]],
       ['colour', 'rank', 'Rank colour'], ['colour', 'value', 'Value colour'], ['colour', 'unlock', 'Reward colour'],
-      ['colour', 'total', 'Total colour'], ['toggle', 'showTotal', 'Show the running total (e.g. 30 kills // 42 total kills)'], ['toggle', 'cash', 'Show cash rewards'], ['toggle', 'hideAch', 'Hide achievements in the preview']],
+      ['colour', 'total', 'Total colour'], ['toggle', 'showTotal', 'Running total [x // y total]'], ['toggle', 'cash', 'Show cash rewards'], ['toggle', 'hideAch', 'Hide achievements in the preview']],
     items(D, s) {
       return D.roles.map(r => {
         if (s.mode === 'vanilla') return { name: r.name, sub: r.row, key: r.key, orig: r.desc, test: s.hideAch && r.ach };
@@ -183,7 +186,7 @@ export const GENS = [
     id: 'ranktitles', group: 'Progression', title: 'Role rank titles', file: 'RoleMilestones', kind: 'ui',
     help: 'Adds what each rank needs to its title, e.g. "Rifleman - Rank 3 (50 kills)", optionally with the running total for the role.',
     defaults: { colour: '#a0a0a0', showTotal: false },
-    controls: [['colour', 'colour', 'Requirement colour'], ['toggle', 'showTotal', 'Add the running total (e.g. 50 kills, 92 total)']],
+    controls: [['colour', 'colour', 'Requirement colour'], ['toggle', 'showTotal', 'Running total']],
     items(D, s) {
       return D.roles.flatMap(r => { const sum = r.acts.map(() => 0); return r.ranks.map(k => {
         r.acts.forEach((a, j) => sum[j] += k.pass[j]);
@@ -196,7 +199,7 @@ export const GENS = [
     id: 'contacts', group: 'Progression', title: 'Contact descriptions', file: 'Contacts', kind: 'ui',
     help: 'Lists what each contact level unlocks (standing needed, items, cash) in the contact description.',
     defaults: { mode: 'desc+levels', lvl: '#ffb000', item: '#ffffff', cash: true, hideHidden: true },
-    controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['levels', 'Unlocks only'], ['desc+levels', 'Description + unlocks'], ['levels+desc', 'Unlocks + description']]],
+    controls: [['seg', 'mode', 'Description', [['vanilla', 'Vanilla'], ['levels', 'Unlocks'], ['desc+levels', 'Description + unlocks'], ['levels+desc', 'Unlocks + description']]],
       ['colour', 'lvl', 'Level colour'], ['colour', 'item', 'Unlock colour'], ['toggle', 'cash', 'Show cash rewards'], ['toggle', 'hideHidden', 'Hide hidden / test contacts in the preview']],
     items(D, s) {
       return D.contacts.map(c => {
@@ -215,8 +218,8 @@ export const GENS = [
     id: 'daily', group: 'Progression', title: 'Daily activities', file: 'DailyActivityContacts', kind: 'hud',
     help: 'HUD text file: colours must be named game colours (<col:Name>). Titles can show the reward (e.g. the weapon), descriptions can be shortened.',
     defaults: { title: 'vanilla', hud: 'colour', long: 'vanilla', base: 'White', value: 'Yellow', reward: 'Valentine_Pink', hideOff: true },
-    controls: [['seg', 'title', 'Title', [['vanilla', 'Vanilla'], ['reward', 'Reward name', 'Rare activities: title = the reward item'], ['both', 'Title + reward']]],
-      ['seg', 'hud', 'HUD description', [['vanilla', 'Vanilla'], ['colour', 'Recolour', 'Base + value colours'], ['short', 'Short', 'e.g. "Kill streak: 15"']]],
+    controls: [['seg', 'title', 'Title', [['vanilla', 'Vanilla'], ['reward', '[Reward]', 'Rare activities: title = the reward item'], ['both', 'Title [Reward]']]],
+      ['seg', 'hud', 'HUD description', [['vanilla', 'Vanilla'], ['colour', 'Recolour', 'Base + value colours'], ['short', 'Task: Count', 'e.g. "Kill streak: 15"']]],
       ['seg', 'long', 'Long description', [['vanilla', 'Vanilla'], ['hud', 'Same as HUD line']]],
       ['colour', 'base', 'Base colour'], ['colour', 'value', 'Value colour'], ['colour', 'reward', 'Reward colour'], ['toggle', 'hideOff', 'Hide disabled activities in the preview']],
     items(D, s) {
@@ -244,12 +247,12 @@ export const GENS = [
     id: 'missions', group: 'Missions', title: 'Mission stage briefs', file: 'TaskObjectives', kind: 'hud',
     help: 'Replaces each stage brief with a compact list of all stages (count, time limit), the current one highlighted. HUD text: named colours only, <Fonts:> has no effect here.',
     defaults: { mode: 'list', cur: 'Valentine_Pink', rest: 'White', time: true, sizes: false, stop: true, hideOff: true, sep: ' | ', words: 'standard' },
-    controls: [['seg', 'mode', 'Brief', [['vanilla', 'Vanilla'], ['list', 'Stage list'], ['list+brief', 'Stage list + brief'], ['next', 'Current + next stage'], ['window', 'Current | Next | … to the last stage']]],
-      ['seg', 'words', 'Wording', [['standard', 'Drop Off · Point Hold · Invest'], ['iazer', 'Drop · Area · Investigate (iazer)']]],
+    controls: [['seg', 'mode', 'Brief', [['vanilla', 'Vanilla'], ['list', 'Stage list'], ['list+brief', 'Stage list + brief'], ['next', 'Current / Next']]],
+      ['seg', 'words', 'Wording', [['standard', 'Drop Off · Point Hold · Invest'], ['iazer', 'Drop · Area · Investigate']]],
       ['colour', 'cur', 'Current stage'], ['colour', 'rest', 'Other stages'], ['toggle', 'time', 'Show time limits'], ['toggle', 'sizes', 'Show item sizes (S / M / L)'],
-      ['toggle', 'stop', 'Opposition briefs say "Stop: …"'], ['toggle', 'hideOff', 'Hide disabled missions in the preview (they are still written)']],
+      ['toggle', 'stop', 'Opposition briefs say "Stop: …"'], ['toggle', 'hideOff', 'Hide disabled missions in the preview']],
     items(D, s) {
-      const out = [];
+      const out = [], mode = s.mode === 'window' ? 'list' : s.mode;
       for (const mi of D.missions) {
         const ownerTime = st => { const o = st.opp ? mi.stages.find(x => !x.opp && x.stage === st.stage) : null; return (o || st).time || 300; };
         const label = (st, pair) => { const c = Math.max(st.n, st.items, st.veh), w = stageWord(D, st, s.words); return `${pair ? shortWord(D, w) : w}${c > 1 ? ' ' + c : ''}${s.sizes && st.size && st.size !== 'V' ? ` (${st.size})` : ''}${st.heavy && /Pickup|Delivery|Vehicle/.test(st.cat) ? ' [Heavy]' : ''}`; };
@@ -265,15 +268,14 @@ export const GENS = [
         for (const st of mi.stages) {
           const at = Math.max(0, gi(st));
           const txtOf = i => i === at && st.opp ? timed(label(st), st) : timed(groupLabel(groups[i]), groups[i][0]);
-          const list = s.mode === 'window'
-            ? groups.map((g, i) => i < at ? null : i === at ? `<col:${s.cur}>${txtOf(i)}</col>` : txtOf(i)).filter(Boolean).join(s.sep)
-            : s.mode === 'next'
-            ? (at + 1 < groups.length ? `Current Stage: <col:${s.cur}>${txtOf(at)}</col>${NL}Next Stage: <col:${s.rest}>${txtOf(at + 1)}</col>` : `Final Stage: <col:${s.cur}>${txtOf(at)}</col>`)
+          const W = t => `<col:White>${t}</col>`;
+          const list = mode === 'next'
+            ? (at + 1 < groups.length ? `${W('Current Stage:')} <col:${s.cur}>${txtOf(at)}</col>${NL}${W('Next Stage:')} <col:${s.rest}>${txtOf(at + 1)}</col>` : `${W('Final Stage:')} <col:${s.cur}>${txtOf(at)}</col>`)
             : groups.map((g, i) => i < at ? null : `<col:${i === at ? s.cur : s.rest}>${txtOf(i)}</col>`).filter(Boolean).join(s.sep);
           for (const f of ['OwnerBrief', 'DispatchBrief']) {
             const orig = f === 'OwnerBrief' ? st.owner : st.dispatch;
-            const pre = s.stop && (f === 'DispatchBrief') !== !!st.opp ? `<col:${s.cur}>Stop:</col> ` : '';
-            const v = s.mode === 'vanilla' ? undefined : pre + list + (s.mode === 'list+brief' && orig ? NL + orig : '');
+            const pre = s.stop && (f === 'DispatchBrief') !== !!st.opp ? `${W('Stop:')} ` : '';
+            const v = mode === 'vanilla' ? undefined : pre + list + (mode === 'list+brief' && orig ? NL + orig : '');
             out.push({ name: `${mi.title} · stage ${st.stage + 1}${st.opp ? ' (opposition)' : ''}`, sub: f, key: `TaskObjectives_${st.row}_${f}${st.suf}`, orig, value: v, test: s.hideOff && mi.off, child: f === 'DispatchBrief' });
           }
         }

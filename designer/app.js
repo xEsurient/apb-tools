@@ -4,11 +4,11 @@ import { weaponStats, vehicleStats } from './stats.js';
 import { initEditor } from './editor.js';
 import { initCategories } from './categories.js';
 import { initPresets } from './presets.js';
-import { folderBar, findLoc, readLoc, onFolder } from './folder.js';
+import { folderBar, findLoc, readLoc, onFolder, inGame, hasConfig } from './folder.js';
 import { watch, refUrl, iconSpan } from './assets.js';
 
 let D;
-const TABS = { presets: 'Presets', gen: 'Generators', categories: 'Weapon categories', colours: 'Colours', editor: 'Editor', tables: 'Stat tables' };
+const TABS = { presets: 'Presets', gen: 'Generators', categories: 'Categories', colours: 'Colours', editor: 'Editor', tables: 'Stat tables' };
 
 async function main() {
   try { D = await data(); } catch (e) { $('#main').textContent = 'Could not load the game data: ' + e.message; return; }
@@ -69,14 +69,19 @@ function openGen(g) {
     h('div', { class: 'row' }, fname, h('button', { class: 'primary', onclick: () => out(g, fname.value) }, 'Download'),
       h('button', { onclick: e => copyLines(g, e.target) }, 'Copy lines'), h('button', { onclick: () => { delete baseFile[g.id]; openGen(g); } }, 'Clear file')), info, h('div', { id: 'outinfo', class: 'hint' })));
   const q = h('input', { type: 'search', placeholder: 'Search name or key…', id: 'genq', oninput: () => { limit = 60; preview(); } });
-  const orig = h('label', { class: 'opt' }, h('input', { type: 'checkbox', id: 'genorig', onchange: preview }), 'Show the game\'s text next to it');
-  box.append(h('div', { class: 'row prevbar' }, q, orig, h('span', { id: 'gencount', class: 'hint' })), h('div', { id: 'prev' }));
+  const orig = h('label', { class: 'opt' }, h('input', { type: 'checkbox', id: 'genorig', onchange: preview }), 'Show the game\'s text');
+  const mine = h('label', { class: 'opt', id: 'genmine-l', hidden: !hasConfig(), title: 'Your current line from your config / game folder, as it shows in game' }, h('input', { type: 'checkbox', id: 'genmine', checked: hasConfig(), onchange: preview }), 'Show your in-game text');
+  box.append(h('div', { class: 'row prevbar' }, q, orig, mine, h('span', { id: 'gencount', class: 'hint' })), h('div', { id: 'prev' }));
   refresh();
 }
 let ITEMS = [];
 function refresh() { const s = S[current.id]; ITEMS = current.items(D, s); preview(); const ch = ITEMS.filter(x => x.value !== undefined).length; $('#outinfo').textContent = `${ch} line${ch === 1 ? '' : 's'} to write.`; }
+let MINE = null;
+onFolder(() => { const l = $('#genmine-l'); if (l) { l.hidden = !hasConfig(); $('#genmine').checked = hasConfig(); } if (current) { MINE = null; preview(); } });
 function preview() {
-  const q = ($('#genq').value || '').toLowerCase(), showOrig = $('#genorig').checked, box = $('#prev');
+  if (MINE && MINE.file !== current.file) MINE = null;
+  const q = ($('#genq').value || '').toLowerCase(), showOrig = $('#genorig').checked, showMine = $('#genmine') && $('#genmine').checked && hasConfig(), box = $('#prev');
+  if (showMine && !MINE) { if (hasConfig()) inGame(current.file).then(m => { if (m.has) { MINE = { ...m, file: current.file }; preview(); } }); }
   const list = ITEMS.filter(x => !x.test && (!q || (x.name + ' ' + x.key + ' ' + x.sub).toLowerCase().includes(q)));
   $('#gencount').textContent = `${list.length} item${list.length === 1 ? '' : 's'}`;
   box.innerHTML = '';
@@ -86,6 +91,7 @@ function preview() {
       x.child ? null : h('div', { class: 'tiphead' + (x.icon ? ' withicon' : '') }, x.icon ? h('span', { html: iconSpan(x.icon, 40, 'tipicon') }) : null, h('div', {}, h('b', { html: render(x.name) }), h('span', { class: 'hint' }, x.sub))),
       x.child ? h('div', { class: 'hint' }, x.sub) : null,
       h('div', { class: 'tipbody' + (changed ? '' : ' same'), html: render(changed ? x.value : x.orig) || '<span class="hint">(empty)</span>' }),
+      showMine && MINE ? (v => h('div', { class: 'tipbody mine' + (v === undefined ? ' none' : ''), title: 'Your in-game text', html: v === undefined ? '<span class="hint">(not in your files: the game shows its default)</span>' : render(v) || '<span class="hint">(empty)</span>' }))(MINE.value(x.key)) : null,
       showOrig && changed ? h('div', { class: 'tipbody orig', html: render(x.orig) }) : null,
       h('code', { class: 'key', title: changed ? x.value : 'unchanged' }, x.key, changed ? '' : '  · unchanged')));
   }
@@ -224,13 +230,13 @@ function buildTables() {
   const q = h('input', { type: 'search', placeholder: 'Filter by name, category or row…', value: st.q, oninput: () => { st.q = q.value; save(); draw(); } });
   const table = h('div', { class: 'tbl' });
   const W = [['name', 'Weapon'], ['cat', 'Category'], ['ttk', 'TTK s'], ['stk', 'STK'], ['far', 'STK far'], ['dmg', 'Damage'], ['hard', 'Hard'], ['rpm', 'RPM'], ['mag', 'Mag'], ['ammo', 'Ammo'], ['reload', 'Reload s'], ['equip', 'Equip s'], ['range', 'Range m'], ['mods', 'Built-in mods']];
-  const V = [['name', 'Vehicle'], ['model', 'Model'], ['health', 'Health'], ['speed', 'Top speed m/s'], ['rev', 'Reverse m/s'], ['cargo', 'Cargo'], ['exp', 'Explosion dmg'], ['mods', 'Built-in mods']];
+  const V = [['name', 'Vehicle'], ['model', 'Model'], ['health', 'Max Health'], ['speed', 'Max Speed m/s'], ['rev', 'Max Reverse Speed m/s'], ['cargo', 'Cargo Capacity'], ['exp', 'Explosion Max Damage'], ['expr', 'Explosion Radius m'], ['emp', 'EMP Vulnerability %'], ['mods', 'Built-in mods']];
   const rowsW = () => D.weapons.filter(w => w.types[0] && (st.test || !w.test)).map(w => {
     const s = weaponStats(w.types[0], w.mods, st.mods, D.const), x = s.w;
     return { name: w.name, cat: w.cat, row: w.row, ttk: s.kind === 'explosive' ? null : +s.ttk.toFixed(3), stk: s.stk, far: s.farStk || null, dmg: +(s.dmg || 0).toFixed(1) + (s.rays > 1 ? ' x' + s.rays : ''), _dmg: (s.dmg || 0) * (s.rays || 1),
       hard: +(s.hard || 0).toFixed(1), rpm: s.rpm ? Math.round(s.rpm) : null, mag: x.mag, ammo: x.ammo, reload: +x.reload.toFixed(2), equip: +x.equip.toFixed(2), range: x.ramp ? +(x.ramp / 100).toFixed(1) : null, mods: (st.mods ? x.modNames : w.mods.map(m => m.name)).join(', '), lt: w.types[0].ltl && s.kind !== 'explosive' };
   });
-  const rowsV = () => D.vehicles.filter(v => st.test || !v.test).map(v0 => { const v = vehicleStats(v0, st.mods); return { name: v.name, model: v.model, row: v.row, health: v.health, speed: v.speed, rev: v.rev, cargo: v.cargo, exp: v.exp ? v.exp.dmg : null, mods: v.modNames.join(', ') }; });
+  const rowsV = () => D.vehicles.filter(v => st.test || !v.test).map(v0 => { const v = vehicleStats(v0, st.mods); return { name: v.name, model: v.model, row: v.row, health: v.health, speed: v.speed, rev: v.rev, cargo: v.cargo, exp: v.exp ? v.exp.dmg : null, expr: v.exp ? +(v.exp.r / 100).toFixed(1) : null, emp: v.emp !== undefined ? Math.round(v.emp * 100) : null, mods: v.modNames.join(', ') }; });
   const draw = () => {
     const cols = st.kind === 'weapons' ? W : V, t = st.q.toLowerCase();
     let rows = (st.kind === 'weapons' ? rowsW() : rowsV()).filter(r => !t || `${r.name} ${r.cat || r.model} ${r.row}`.toLowerCase().includes(t));
