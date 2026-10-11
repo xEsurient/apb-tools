@@ -230,7 +230,7 @@ function buildTables() {
   const q = h('input', { type: 'search', placeholder: 'Filter by name, category or row…', value: st.q, oninput: () => { st.q = q.value; save(); draw(); } });
   const table = h('div', { class: 'tbl' });
   const W = [['name', 'Weapon'], ['cat', 'Category'], ['ttk', 'TTK s'], ['stk', 'STK'], ['far', 'STK far'], ['dmg', 'Damage'], ['hard', 'Hard'], ['rpm', 'RPM'], ['mag', 'Mag'], ['ammo', 'Ammo'], ['reload', 'Reload s'], ['equip', 'Equip s'], ['range', 'Range m'], ['mods', 'Built-in mods']];
-  const V = [['name', 'Vehicle'], ['model', 'Model'], ['health', 'Max Health'], ['speed', 'Max Speed m/s'], ['rev', 'Max Reverse Speed m/s'], ['cargo', 'Cargo Capacity'], ['exp', 'Explosion Max Damage'], ['expr', 'Explosion Radius m'], ['emp', 'EMP Vulnerability %'], ['mods', 'Built-in mods']];
+  const V = [['name', 'Vehicle'], ['model', 'Model'], ['health', 'Max Health'], ['speed', 'Max Speed m/s'], ['rev', 'Max Reverse Speed m/s'], ['cargo', 'Cargo Capacity'], ['exp', 'Explosion Max Damage'], ['expr', 'Explosion Radius m'], ['emp', 'EMP %', 'EMP Vulnerability (%)'], ['mods', 'Built-in mods']];
   const rowsW = () => D.weapons.filter(w => w.types[0] && (st.test || !w.test)).map(w => {
     const s = weaponStats(w.types[0], w.mods, st.mods, D.const), x = s.w;
     return { name: w.name, cat: w.cat, row: w.row, ttk: s.kind === 'explosive' ? null : +s.ttk.toFixed(3), stk: s.stk, far: s.farStk || null, dmg: +(s.dmg || 0).toFixed(1) + (s.rays > 1 ? ' x' + s.rays : ''), _dmg: (s.dmg || 0) * (s.rays || 1),
@@ -243,7 +243,7 @@ function buildTables() {
     const sk = st.sort === 'dmg' ? '_dmg' : st.sort;
     rows.sort((a, b) => { const x = a[sk], y = b[sk]; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y))) * st.dir; });
     table.innerHTML = '';
-    const head = h('tr', {}, cols.map(([k, l]) => h('th', { class: st.sort === k ? 'sorted' : '', onclick: () => { st.dir = st.sort === k ? -st.dir : 1; st.sort = k; save(); draw(); } }, l, st.sort === k ? (st.dir > 0 ? ' ▲' : ' ▼') : '')));
+    const head = h('tr', {}, cols.map(([k, l, t]) => h('th', { class: st.sort === k ? 'sorted' : '', title: t || null, onclick: () => { st.dir = st.sort === k ? -st.dir : 1; st.sort = k; save(); draw(); } }, l, st.sort === k ? (st.dir > 0 ? ' ▲' : ' ▼') : '')));
     const body = rows.slice(0, 1500).map(r => h('tr', { title: r.row }, cols.map(([k]) => h('td', { class: k === 'name' ? 'nm' : '' }, r[k] === null || r[k] === undefined ? '–' : r[k], k === 'ttk' && r.lt ? h('small', { class: 'hint' }, ' stun') : null))));
     table.append(h('table', { class: 'grid' }, h('thead', {}, head), h('tbody', {}, body)), h('p', { class: 'hint' }, `${rows.length} rows`));
   };

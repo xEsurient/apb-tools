@@ -157,7 +157,7 @@ const SETS = P => Object.entries(P.iazer).map(([id, p]) => ({ id: 'iazer:' + id,
 const BUNDLES = P => [
   { id: 'stock', label: 'Clean stock', note: 'Game text only (use it to reset files).', pick: {} },
   { id: 'designer', label: 'Designer default', note: 'Our generators: stats, ranks, stage lists, recoloured dailies.', family: 'designer', pick: { daily: 'preset', missions: 'preset', weapons: 'preset', vehicles: 'preset', roles: 'preset' } },
-  ...SETS(P),
+  ...SETS(P).sort((a, b) => (b.id === 'iazer:Green_Red') - (a.id === 'iazer:Green_Red')),
   { id: 'writch', label: 'writch', credit: 'writch', note: 'Purple / pink look, gradient stat sheets, an icon instead of street names.', pal: { col: 'Purple_Dark', team: [0.6, 0, 1], enemy: [1, 0, 0.2] },
     family: 'writch', styleOf: { roles: 'designer' }, pick: { daily: 'preset', missions: 'preset', weapons: 'preset', vehicles: 'preset', roles: 'preset', names: 'preset', hud: 'preset', targets: 'hidden', streets: 'icon' } }
 ];
@@ -171,7 +171,7 @@ export async function initPresets(root, D) {
     return { id: 'custom', label: 'Custom colours', note: 'Your main, friendly and enemy colours applied to every file; fine-tune any file afterwards.',
       pal: { col: m.name, main: m.rgb, team: f.rgb, enemy: e.rgb },
       family: 'designer', styleOf: { hud: 'iazer' }, pick: { daily: 'preset', missions: 'next', titles: 'equip', weapons: 'preset', vehicles: 'preset', roles: 'preset', hud: 'preset' } }; };
-  const bundlesNow = () => [...base.slice(0, 2), custom(), ...base.slice(2)];
+  const bundlesNow = () => [...base.slice(0, 3), custom(), ...base.slice(3)];
   const st = store.get('presets', { bundle: 'designer', pick: {}, custom: { main: 'Valentine_Pink', friend: '#45ff16', enemy: '#e10000' }, ext: 'GER', fromInt: true, street: { on: false, style: 'white', colour: '#ffffff', alpha: 1, font: 'EngineFonts.SmallFont', files: { StreetName: true, DistrictBlocks: true, LocationBeaconInstances: true } } });
   const save = () => store.set('presets', st);
   st.custom = st.custom || { main: 'Valentine_Pink', friend: '#45ff16', enemy: '#e10000' };
