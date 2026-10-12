@@ -90,9 +90,9 @@ export const SLOTS = [
   { id: 'shop', label: 'Categories', files: 'ShopUIFilters, InventoryItemInfraCategories', variants: [
     ['stock', 'Game default'],
     ['tool', 'My Categories layout', (D) => categoryFiles(D)],
-    ['fixed', 'Fixed order, coloured', (D, P) => {
+    ['fixed', 'Coloured', (D, P) => {
       const rows = Object.values(D.shopFilters).flat(); let n = 0;
-      return { ShopUIFilters: rows.map(r => [`ShopUIFilters_${r.row}_Name`, `<Color:F=${String(n++ % 100).padStart(2, '0')} ${apbTag(hex2rgb(VIVID[n % VIVID.length])).slice(7, -1)}>${stripTags(r.name)}<Color:/>`]) };
+      return { ShopUIFilters: rows.map(r => [`ShopUIFilters_${r.row}_Name`, `${apbTag(hex2rgb(VIVID[++n % VIVID.length]))}${stripTags(r.name)}<Color:/>`]) };
     }]] },
   { id: 'hud', label: 'HUD & combat messages', files: 'HUDMessages, HUDCombatMessages', variants: [
     ['stock', 'Game default'],

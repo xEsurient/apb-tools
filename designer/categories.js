@@ -8,13 +8,12 @@ const CAT_OF = [[/AssaultRifle/, ['Assault Rifles']], [/SubMachineGun/, ['Sub-Ma
 const PKG_OF = [[/Cloth|Wardrobe|Armou?r|Belt|Bottom|Eyewear|Footwear|Handwear|Headwear|Jewel|Mask|Overall|Skirt|Top|Underwear|Webbing|Outfit/i, 'APBMenus_Art_ClothingIcons'],
   [/Vehicle|Car|Truck|Van/i, 'APBMenus_Art_VehicleIcons'], [/FnMod|Modif|Usable|Consum/i, 'APBMenus_Art_UpgradeIcons'], [/Equipment/i, 'APBMenus_Art_EquipmentIcons'], [/Weapon|Ammo|Grenade/i, 'APBMenus_Art_Weapons']];
 const plain = s => String(s).replace(/<[^<>]*>/g, '').trim();
-const pad = n => String(n).padStart(2, '0');
 const weaponsOf = (D, row) => { const cats = (CAT_OF.find(([re]) => re.test(row)) || [0, []])[1]; return D.weapons.filter(w => /Valentine/.test(row) ? /valentine/i.test(w.row + ' ' + w.name) : cats.includes(w.cat)); };
 
 const allLists = D => D.catLists || Object.entries(D.shopFilters).map(([id, rows]) => ({ id, group: 'Weapons', label: id, file: 'ShopUIFilters', col: 'Name', weapons: 1, rows }));
 const listOf = (D, id) => allLists(D).find(l => l.id === id) || allLists(D)[0];
-const DEFAULT_ST = { list: 'deploy', key: 'F', yl: 16, font: '', lists: {} };
-const keyOf = (st, L) => (st.lists[L.id] && st.lists[L.id].key) || (L.file === 'ShopUIFilters' ? st.key : 'none');
+const DEFAULT_ST = { list: 'deploy', key: 'none', yl: 16, font: '', lists: {} };
+const keyOf = (st, L) => ((st.lists[L.id] && st.lists[L.id].key) || (L.file === 'ShopUIFilters' ? st.key : 'none')) === 'number' ? 'number' : 'none';
 function listRows(D, st, id) {
   const L = listOf(D, id), base = L.rows, saved = st.lists[L.id] || {};
   const order = saved.order || base.map(r => r.row);
@@ -31,7 +30,6 @@ function catValue(D, st, id, row, idx) {
   const coloured = it.mode === 'none' ? shown : colourText(shown, { mode: it.mode === 'triple' ? 'smooth' : it.mode, stops, kind: 'ui' });
   const icon = imageTag(it.icon, st.yl, it.tint);
   let v = it.iconOnly && icon ? icon : `${icon}${icon ? ' ' : ''}${coloured}`;
-  if (key === 'F') v = `<Color:F=${pad(idx)} A=1>${v}<Color:/>`;
   if (st.font) v = `<Fonts:${st.font}>${v}<Fonts:/>`;
   return v;
 }
@@ -158,13 +156,13 @@ export function initCategories(root, D) {
     opts.replaceChildren(
       h('div', { class: 'field' }, h('label', {}, 'List'), h('select', { onchange: e => { st.list = e.target.value; selected = null; save(); draw(); } },
         groups.map(([g, ls]) => h('optgroup', { label: g }, ls.map(l => h('option', { value: l.id, selected: l.id === L.id }, `${l.label} (${l.rows.length})${edited(l.id) ? ' ✎' : ''}`)))))),
-      h('div', { class: 'field' }, h('label', {}, 'Sort key'), seg([['F', 'Hidden (F=00…)'], ['number', 'Visible numbers (1. 2. …)'], ['none', 'None (game order)']], keyOf(st, L), setKey)),
-      L.file !== 'ShopUIFilters' ? h('p', { class: 'hint' }, 'Marketplace names come from InventoryItemInfraCategories. Whether the marketplace sorts them by name is untested, so the sort key is off by default.') : null);
+      h('div', { class: 'field' }, h('label', {}, 'Sort key'), seg([['none', 'None (game order)'], ['number', 'Visible numbers (1. 2. …)']], keyOf(st, L), setKey)),
+      L.file !== 'ShopUIFilters' ? h('p', { class: 'hint' }, 'Marketplace names come from InventoryItemInfraCategories.') : null);
   };
 
   const top = h('div', { class: 'card glass' },
     h('h3', {}, 'Categories'),
-    h('p', { class: 'hint' }, 'Every category list of the game: weapon tabs, wardrobe clothing types, inventory, Fixer, deploy, armory and Joker store filters, and the marketplace names. Drag the categories (or use ▲ ▼) into the order you want, rename them, colour them and put an image in front (or use the image alone). Filter lists sort categories by their name text, so each name starts with an invisible sort key (', h('code', {}, '<Color:F=00 A=1>'), ', ', h('code', {}, 'F=01'), ' …), the method the community configs use. Lists marked ✎ have changes; Download writes every list you changed in that file.'),
+    h('p', { class: 'hint' }, 'Every category list of the game: weapon tabs, wardrobe clothing types, inventory, Fixer, deploy, armory and Joker store filters, and the marketplace names. Drag the categories (or use ▲ ▼) into the order you want, rename them, colour them and put an image in front (or use the image alone). Whether the game orders a list by its names is untested: the visible numbers (1. 2. …) only change the order if it does. Lists marked ✎ have changes; Download writes every list you changed in that file.'),
     opts,
     h('div', { class: 'row' }, h('label', { class: 'hint' }, 'Image height'), h('input', { type: 'number', min: 8, max: 32, value: st.yl, style: 'width:70px', oninput: e => { st.yl = +e.target.value || 16; save(); draw(); } }),
       h('label', { class: 'hint' }, 'Font'), h('select', { onchange: e => { st.font = e.target.value; save(); draw(); } }, h('option', { value: '' }, 'Game default'), FONTS.map(f => h('option', { value: f, selected: st.font === f }, f.split('.').pop().replace(/_/g, ' '))))));

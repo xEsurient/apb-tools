@@ -139,12 +139,11 @@ use ▲ ▼) into your order, rename them, colour them (solid, smooth, triple, r
 or use the image alone. The image picker offers HUD icons and HUD textures (written as `<APB_Images:…>`) and every
 package image (`<Images:…>`, by package or search); weapon lists also suggest the kill-feed and inventory icons of
 their weapons. Images can be tinted (`<ImageColour:>`, multiplies the picture); **Default icons for empty categories**
-fills weapon lists in one click. Sample weapons of the selected weapon category are shown next to the list. The lists sort categories by their name text, so every name starts with an invisible sort
-key, `<Color:F=00 A=1>`, `<Color:F=01 A=1>` … (the colour tag ignores `F=`; the same method the community configs
-use), or with visible numbers if you prefer. The Valentines and Christmas categories are included; the game gives them
+fills weapon lists in one click. Sample weapons of the selected weapon category are shown next to the list. Names can start with visible numbers (1. 2. …); whether the game orders a list by its
+names is untested, so the game's own order may stay. The Valentines and Christmas categories are included; the game gives them
 no shop, so they normally do not appear. Download writes the list's file (`ShopUIFilters` or
 `InventoryItemInfraCategories`, merged into your file if you pick one) with every list of that file you changed (marked
-✎). Whether the marketplace sorts by name is untested, so its sort key is off by default; marketplace names may also
+✎). Marketplace names may also
 show where the game names an item's category.
 
 Gun Game and event weapons (Legacy and Gun Game sets, snowball and egg launchers, Ghostly Flare Gun, …) are part of
