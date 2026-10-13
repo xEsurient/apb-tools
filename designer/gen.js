@@ -101,7 +101,7 @@ export const GENS = [
     items(D, s) {
       const L = lineMaker(s, 'ui'), sp = v => `${n(v, 1)} m/s${s.kmh ? ` (${Math.round(v * 3.6)} km/h)` : ''}`;
       return D.vehicles.map(v0 => {
-        const v = vehicleStats(v0, s.useMods), out = [];
+        const v = vehicleStats(v0, s.useMods, D.modDefs.vehicle), out = [];
         const sh = { ...this.defaults.show, ...s.show };
         if (sh.health) out.push(L('Max Health', v.health, true));
         if (sh.speed) out.push(L('Max Speed', sp(v.speed)));
@@ -119,7 +119,7 @@ export const GENS = [
   {
     id: 'names', group: 'Items', title: 'Item name colours', file: 'InventoryItemTypes', kind: 'ui',
     help: 'Colours the names of weapons (by shop category) and modifications (by slot) in InventoryItemTypes. Pick a colour or gradient per group.',
-    defaults: { groups: {}, font: '', ...gradDefaults('g'), sel: 'Assault Rifles' },
+    defaults: { groups: {}, font: '', ...gradDefaults('g'), sel: 'Weapons: Assault Rifles' },
     controls: [['groups'], ['font', 'font', 'Font']],
     groups(D) {
       const g = new Map();

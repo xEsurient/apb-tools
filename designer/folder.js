@@ -79,7 +79,7 @@ export function folderBar() {
       : 'Pick the game folder (or its APBGame/Localization folder) and / or your config zip: only the INT and GER localisation files inside are used; nothing is uploaded.';
   };
   input.onchange = () => { setFolder(input.files); };
-  zip.onchange = async () => { await setZip(zip.files); };
+  zip.onchange = async () => { try { await setZip(zip.files); } catch (e) { info.textContent = 'Could not read that config: ' + e.message; } };
   onFolder(show); show();
   return h('div', { class: 'folderbar glass' }, h('label', { class: 'drop' }, input, '📁 ', h('span', {}, h('b', {}, 'Game folder'))),
     h('label', { class: 'drop' }, zip, '🗜 ', h('span', {}, h('b', {}, 'Your config'), ' (zip or INT/GER files)')), info);

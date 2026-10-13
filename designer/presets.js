@@ -1,4 +1,4 @@
-import { $, $$, h, render, seg, toggle, colourPick, colourText, hex2rgb, rgb2hex, apbTag, FONTS, store, intValue, buildFile, setNamed, named, namedRgb, nearestNamed, namedSelect } from './core.js';
+import { $, h, render, seg, toggle, colourPick, colourText, hex2rgb, rgb2hex, apbTag, FONTS, store, buildFile, named, namedRgb, nearestNamed, namedSelect } from './core.js';
 import { GENS, stripTags } from './gen.js';
 import { categoryFiles } from './categories.js';
 import { imagePicker, imageTag } from './imgpick.js';
@@ -59,7 +59,7 @@ export const SLOTS = [
     ['designer', '', (D) => genLines(D, 'missions')],
     ['iazer', '', (D, P, c) => genLines(D, 'missions', { cur: c.pal.col, rest: 'White', sizes: true, stop: false, words: 'iazer' })],
     ['writch', '', (D, P) => genLines(D, 'missions', { cur: P.writch.cur, rest: P.writch.rest, sizes: true, stop: false, words: 'iazer' })],
-    ['next', 'Current / Next', (D, P, c) => genLines(D, 'missions', { mode: 'next', cur: c.pal ? c.pal.col : 'Valentine_Pink', rest: 'Purple', stop: false })],
+    ['next', 'Current / Next', (D, P, c) => genLines(D, 'missions', { mode: 'next', cur: c.pal.col, rest: 'Purple', stop: false })],
     mine('missions')] },
   { id: 'titles', label: 'Mission titles', files: 'MissionTemplates', variants: [
     ['stock', 'Game default'],
@@ -163,7 +163,9 @@ const BUNDLES = P => [
 ];
 
 export async function initPresets(root, D) {
-  const P = await (await fetch('presets.json')).json();
+  let P;
+  try { const r = await fetch('presets.json'); if (!r.ok) throw new Error('presets.json ' + r.status); P = await r.json(); }
+  catch (e) { root.replaceChildren(h('div', { class: 'card glass' }, h('p', {}, 'Could not load the presets: ' + e.message), h('button', { onclick: () => { root.replaceChildren(); initPresets(root, D); } }, 'Try again'))); return; }
   const base = BUNDLES(P);
   const resolve = v => v && v.startsWith('#') ? { name: (nearestNamed(hex2rgb(v)) || { name: 'White' }).name, rgb: hex2rgb(v).map(x => +(x / 255).toFixed(4)) }
     : { name: v || 'White', rgb: (namedRgb(v) || [255, 255, 255]).slice(0, 3).map(x => +(x / 255).toFixed(4)) };
@@ -202,11 +204,11 @@ export async function initPresets(root, D) {
     return keys.map(k => vals.has(k) ? fillPH(vals.get(k)) : { key: k, stock: stock(k) });
   };
   const fileOfKey = k => k.split('_')[0];
-  const mineInto = (el, items, make) => {
+  const mineInto = (items, make) => {
     const pend = items.filter(x => typeof x === 'object'); if (!pend.length) return;
     if (!hasConfig()) { make(items.map(x => typeof x === 'object' ? fillPH(x.stock) : x), false); return; }
     Promise.all(items.map(x => typeof x === 'object' ? inGame(fileOfKey(x.key)).then(g => { const v = g.value(x.key); return fillPH(v === undefined ? x.stock : v); }) : x))
-      .then(vals => make(vals, true));
+      .then(vals => make(vals, true), () => {});
   };
   const preview = slot => {
     const list = samples(slot);
@@ -217,7 +219,7 @@ export async function initPresets(root, D) {
       if (hasConfig()) {
         const files = slot.files.split(', '), first = (P.stock[files[0]] && P.stock[files[0]].lines.find(([k, v]) => v.trim())) || null;
         const key = first ? first[0] : null;
-        if (key) inGame(files[0]).then(g => { const v = g.value(key); if (v !== undefined && g.own.has(key)) el.replaceChildren(h('div', { class: hudCls + ' mineprev', html: render(fillPH(v)) }), h('small', { class: 'hint' }, 'No change: your in-game text stays (shown).')); });
+        if (key) inGame(files[0]).then(g => { const v = g.value(key); if (v !== undefined && g.own.has(key)) el.replaceChildren(h('div', { class: hudCls + ' mineprev', html: render(fillPH(v)) }), h('small', { class: 'hint' }, 'No change: your in-game text stays (shown).')); }).catch(() => {});
       }
       return el;
     }
@@ -225,7 +227,7 @@ export async function initPresets(root, D) {
       ? h('div', { class: 'gamebox small map streetmap' + (mine ? ' mineprev' : '') }, vals.map((v, i) => h('span', { class: 'lbl', style: `left:${STREET_SPOTS[i][0]}%;top:${STREET_SPOTS[i][1]}%`, html: render(v) || '&nbsp;' })))
       : h('div', { class: 'gamebox small hud' + (mine ? ' mineprev' : '') }, vals.map(v => h('div', { html: render(v) })));
     const holder = h('div', {}, draw(list.map(x => typeof x === 'object' ? fillPH(x.stock) : x), false));
-    mineInto(holder, list, (vals, mine) => holder.replaceChildren(draw(vals, mine), mine && list.some(x => typeof x === 'object') ? h('small', { class: 'hint' }, 'Unchanged lines show your in-game text.') : ''));
+    mineInto(list, (vals, mine) => holder.replaceChildren(draw(vals, mine), mine && list.some(x => typeof x === 'object') ? h('small', { class: 'hint' }, 'Unchanged lines show your in-game text.') : ''));
     return holder;
   };
   const sample = slot => {
@@ -241,7 +243,7 @@ export async function initPresets(root, D) {
         h('code', {}, si.sel ? si.sel.ref : 'none'),
         h('span', { class: 'hint' }, 'Height'), h('input', { type: 'number', min: 8, max: 48, value: si.yl, style: 'width:60px', onchange: e => { si.yl = +e.target.value || 16; save(); draw(); } })),
       h('div', { class: 'row' }, toggle('Keep the name after the image', si.keep, v => { si.keep = v; save(); draw(); }),
-        toggle('Tint', !!si.tint, v => { si.tint = v ? '#ffffff' : null; save(); draw(); }), si.tint ? colourPick('ui', si.tint, v => { si.tint = v; save(); draw(); }) : null),
+        toggle('Tint', !!si.tint, v => { si.tint = v ? '#ffffff' : null; save(); draw(); }), si.tint ? colourPick('ui', si.tint, v => { si.tint = v; save(); clearTimeout(streetImgUI.t); streetImgUI.t = setTimeout(draw, 250); }) : null),
       picker);
   };
   const draw = () => {
@@ -290,7 +292,7 @@ export async function initPresets(root, D) {
     if (sw.on) showPrev();
 
     const userIn = h('input', { type: 'file', accept: '.zip', multiple: true });
-    userIn.onchange = async () => { userFiles = await readInputs(userIn.files); draw(); };
+    userIn.onchange = async () => { try { userFiles = await readInputs(userIn.files); draw(); } catch (e) { msg.textContent = 'Could not read that zip: ' + e.message; } };
     const msg = h('div', { class: 'hint' });
     const out = h('div', { class: 'card glass' }, h('h3', {}, 'Download'),
       h('label', { class: 'drop' }, userIn, '🗜 ', h('span', {}, userFiles ? `${userFiles.length} files from your config: changed files are merged into them` : h('span', {}, 'Optional: your config ', h('b', {}, 'zip'), ' to merge into'))),
@@ -300,7 +302,9 @@ export async function initPresets(root, D) {
         h('button', { class: 'primary', onclick: async () => {
           const files = build(), zip = [], report = [];
           for (const [f, ls] of Object.entries(files)) {
-            const mine = userFiles && userFiles.find(x => x.name.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase() === f.toLowerCase());
+            if (!ls.length) continue;
+            const same = userFiles ? userFiles.filter(x => x.name.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase() === f.toLowerCase()) : [];
+            const mine = same.find(x => /(^|\/)GER\//i.test(x.name) || /\.GER$/i.test(x.name)) || same[0];
             const dir = !mine && findLoc(f, st.fromInt ? ['GER', 'INT'] : ['GER']);
             const base = mine ? { ...decodeText(mine.data), name: mine.name } : dir ? await readLoc(dir) : null;
             const bySec = new Map(); ls.forEach(([k, v, s]) => { const sc = s || f; if (!bySec.has(sc)) bySec.set(sc, []); bySec.get(sc).push([k, v]); });

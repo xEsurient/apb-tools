@@ -1,6 +1,5 @@
-import { $, $$, h, esc, data, setNamed, named, render, seg, toggle, colourPick, FONTS, buildFile, saveFile, readFile, store, hex2rgb, rgb2hex, apbTag, nearestNamed, colourText, fl, hsl } from './core.js';
-import { GENS, stripTags } from './gen.js';
-import { weaponStats, vehicleStats } from './stats.js';
+import { $, $$, h, data, setNamed, named, render, seg, toggle, colourPick, FONTS, buildFile, saveFile, readFile, store, hex2rgb, rgb2hex, apbTag, nearestNamed, colourText, fl, copyText } from './core.js';
+import { GENS } from './gen.js';
 import { initEditor } from './editor.js';
 import { initCategories } from './categories.js';
 import { initPresets } from './presets.js';
@@ -19,8 +18,8 @@ async function main() {
   watch();
   for (const [v, ref] of [['--hudbg', 'APBMenus_Art_GameFlowScenes.NewBackgroundImage'], ['--mapbg', 'APBMenus_Art_MiniMap.MiniMap_Default']])
     refUrl(ref).then(u => { if (u) document.documentElement.style.setProperty(v, `url(${u})`); });
-  onFolder(() => { if (current && /^#?gen/.test(location.hash || '#gen')) openGen(current); });
-  $('.headrow h1').append(h('span', { class: 'dbver' }, `DB Version ${D.apbdb ? D.apbdb.version : D.build || 'game data'}`));
+  onFolder(() => { if (current && location.hash.startsWith('#gen')) openGen(current); });
+  $('.headrow h1').append(h('span', { class: 'dbver' }, D.apbdb ? `DB Version ${D.apbdb.version}` : `Game build ${D.build || '?'}`));
   const tabs = $('#tabs');
   Object.entries(TABS).forEach(([id, label]) => tabs.append(h('button', { 'data-tab': id, onclick: () => go(id) }, label)));
   window.addEventListener('hashchange', route); route();
@@ -60,12 +59,11 @@ function openGen(g) {
   ctl.append(h('h2', {}, g.title), h('p', { class: 'hint' }, g.help), h('p', { class: 'hint' }, 'File: ', h('code', {}, g.file), g.kind === 'hud' ? ' · HUD text (named colours)' : ' · UI text (any colour)'));
   for (const c of g.controls) ctl.append(control(g, s, c, save));
   ctl.append(h('div', { class: 'row' }, h('button', { onclick: () => { S[g.id] = structuredClone(g.defaults); store.set('gen-' + g.id, S[g.id]); openGen(g); } }, 'Reset settings')));
-  const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt,.ini,.fra,.rus,.pol,.esn,.ita,.ini' });
+  const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt,.ini,.fra,.rus,.pol,.esn,.ita' });
   const fname = h('input', { type: 'text', value: (baseFile[g.id] && baseFile[g.id].name) || `${g.file}.GER`, class: 'fname' });
   const fromDir = !baseFile[g.id] && findLoc(g.file);
-  if (fromDir && !baseFile[g.id]) fname.value = g.file + '.GER';
   const info = h('span', { class: 'hint' }, baseFile[g.id] ? `Merging into ${baseFile[g.id].name}` : fromDir ? `Merging into ${fromDir.path} from your game folder${fromDir.lang === 'INT' ? ' (no GER copy yet: the English file is the base, saved as GER)' : ''}.` : 'No file: download a new file with only these lines.');
-  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; baseFile[g.id] = await readFile(f); fname.value = f.name; info.textContent = `Merging into ${f.name} (${baseFile[g.id].enc}${baseFile[g.id].fixed ? ', ' + baseFile[g.id].fixed + ' broken line ends repaired' : ''})`; };
+  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFile[g.id] = await readFile(f); } catch (e) { info.textContent = 'Could not read that file: ' + e.message; return; } fname.value = f.name; info.textContent = `Merging into ${f.name} (${baseFile[g.id].enc}${baseFile[g.id].fixed ? ', ' + baseFile[g.id].fixed + ' broken line ends repaired' : ''})`; };
   box.append(h('div', { class: 'card glass out' }, h('h3', {}, 'Output'),
     h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Optional: your ', h('b', {}, g.file), ' file to merge into (changed lines are replaced, missing ones added)')),
     h('div', { class: 'row' }, fname, h('button', { class: 'primary', onclick: () => out(g, fname.value) }, 'Download'),
@@ -83,7 +81,7 @@ onFolder(() => { const l = $('#genmine-l'); if (l) { l.hidden = !hasConfig(); $(
 function preview() {
   if (MINE && MINE.file !== current.file) MINE = null;
   const q = ($('#genq').value || '').toLowerCase(), showOrig = $('#genorig').checked, showMine = $('#genmine') && $('#genmine').checked && hasConfig(), box = $('#prev');
-  if (showMine && !MINE) { if (hasConfig()) inGame(current.file).then(m => { if (m.has) { MINE = { ...m, file: current.file }; preview(); } }); }
+  if (showMine && !MINE) { if (hasConfig()) { const f = current.file; inGame(f).then(m => { if (m.has && current.file === f) { MINE = { ...m, file: f }; preview(); } }).catch(() => {}); } }
   const list = ITEMS.filter(x => !x.test && (!q || (x.name + ' ' + x.key + ' ' + x.sub).toLowerCase().includes(q)));
   $('#gencount').textContent = `${list.length} item${list.length === 1 ? '' : 's'}`;
   box.innerHTML = '';
@@ -112,7 +110,7 @@ async function out(g, name) {
 }
 function copyLines(g, btn) {
   const t = linesOf(g).map(([k, v]) => `${k}=${v}`).join('\r\n');
-  navigator.clipboard.writeText(t).then(() => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy lines', 1200); });
+  copyText(t).then(ok => { btn.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => btn.textContent = 'Copy lines', 1200); });
 }
 
 function field(label, ...el) { return h('div', { class: 'field' }, h('label', {}, label), h('div', { class: 'fv' }, ...el)); }
@@ -185,7 +183,7 @@ function groupsCtl(g, s, save) {
       h('button', { class: 'mini', onclick: () => selectWhere(() => false) }, 'None')),
     h('div', { class: 'row' }, h('button', { onclick: () => { groups.forEach(([n]) => { gsOf(n).on = true; }); save(); pick(s.sel); } }, 'Enable all'),
       h('button', { onclick: () => { Object.values(s.groups).forEach(gs => gs.on = false); save(); pick(s.sel); } }, 'Disable all')), ul, ed);
-  pick(s.sel || groups[0][0]);
+  pick(groups.some(([n]) => n === s.sel) ? s.sel : groups[0][0]);
   return wrap;
 }
 
@@ -251,6 +249,6 @@ function buildColours() {
   const names = h('section', { class: 'card glass wide' }, h('h3', {}, 'Game colour names for <col:…>'), h('p', { class: 'hint' }, 'From the game\'s HUDColour and HUDColourProfiles tables (current client). Names are not case-sensitive; the game\'s own files also write them with a space, e.g. <col: Yellow>. Close with </col>.'), q, grid);
   root.append(h('div', { class: 'cols2' }, conv, grad), names);
 }
-function copy(text, el) { navigator.clipboard.writeText(text).then(() => { if (!el) return; const o = el.textContent; el.textContent = 'Copied'; setTimeout(() => el.textContent = o, 1000); }); }
+function copy(text, el) { copyText(text).then(ok => { if (!el) return; const o = el.textContent; el.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => el.textContent = o, 1000); }); }
 
 main();

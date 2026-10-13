@@ -1,9 +1,10 @@
 const BASE = '../images/data/';
 let CAT = null, IDX = null, MAPS = null;
 const BUF = {}, URLS = new Map();
+let NORANGE = false;
 
 export async function catalog() {
-  if (!CAT) CAT = fetch(BASE + 'catalog.json').then(r => r.json());
+  if (!CAT) CAT = fetch(BASE + 'catalog.json').then(r => { if (!r.ok) throw new Error('catalog.json ' + r.status); return r.json(); }).catch(e => { CAT = null; throw e; });
   return CAT;
 }
 async function maps() {
@@ -13,21 +14,26 @@ async function maps() {
     const tex = new Map(c.hudtex.map(([name, path, at]) => [name.toLowerCase(), at ? { pkg: at[0], n: at[1], ...(img.get(path.toLowerCase()) || {}) } : null]));
     const icon = new Map(c.hudicon.map(([name, cells]) => [name.toLowerCase(), cells]));
     return { img, tex, icon, atlas: c.atlas };
-  })();
+  })().catch(e => { MAPS = null; throw e; });
   return MAPS;
 }
 export async function imgUrl(pkg, n) {
   const k = `img/${pkg}/${n}`;
   if (!URLS.has(k)) URLS.set(k, (async () => {
-    if (!IDX) IDX = fetch(BASE + 'img_index.json').then(r => r.json());
-    const e = (await IDX)[k]; if (!e) return '';
-    const [f, off, len] = e;
     let bytes;
     try {
-      const r = await fetch(BASE + f, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
-      if (r.status === 206) bytes = await r.arrayBuffer();
-      else { BUF[f] = BUF[f] || Promise.resolve(r.arrayBuffer()); bytes = (await BUF[f]).slice(off, off + len); }
-    } catch { return ''; }
+      if (!IDX) IDX = fetch(BASE + 'img_index.json').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).catch(e => { IDX = null; throw e; });
+      const e = (await IDX)[k]; if (!e) return '';
+      const [f, off, len] = e;
+      const r = NORANGE ? null : await fetch(BASE + f, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
+      if (r && r.status === 206) bytes = await r.arrayBuffer();
+      else {
+        if (r && !r.ok) throw new Error(r.status);
+        if (r) NORANGE = true;
+        if (!BUF[f]) BUF[f] = (r ? r.arrayBuffer() : fetch(BASE + f).then(x => { if (!x.ok) throw new Error(x.status); return x.arrayBuffer(); })).catch(x => { delete BUF[f]; throw x; });
+        bytes = (await BUF[f]).slice(off, off + len);
+      }
+    } catch { URLS.delete(k); return ''; }
     return URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }));
   })());
   return URLS.get(k);

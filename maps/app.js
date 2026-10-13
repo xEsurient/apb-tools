@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ls = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { } } };
 const getJSON = async u => { const r = await fetch(u); if (!r.ok) throw new Error(u + ': ' + r.status); return r.json(); };
 
 const ICON = {
@@ -43,20 +44,20 @@ const DROPOFF = { DropOff_Enf: 'Enforcer drop-off', DropOff_Crim: 'Criminal drop
   MediumLargeItemDropOff_Crim: 'Medium/large item drop-off (Criminal)', VehicleDropOff_Crim: 'Vehicle drop-off (Criminal)', VehicleDropOff_Enf: 'Vehicle drop-off (Enforcer)' };
 
 const S = { season: false, index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1,
-  mode: '2d', opt: { textures: true, labels: true, imagery: true, regions: false }, icons: {}, regions: null, reg: [], ck: null, ckHide: localStorage.getItem('apbmap-ckhide') === '1' };
+  mode: '2d', opt: { textures: true, labels: true, imagery: true, regions: false }, icons: {}, regions: null, reg: [], ck: null, ckHide: ls.get('apbmap-ckhide') === '1' };
 
 const CK_KEY = 'apbmap-collected-v1';
 const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
 const b64 = u => btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 const bitCount = u => { let n = 0; for (let x of u) for (; x; x &= x - 1) n++; return n; };
-function ckStore() { try { return JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch { return {}; } }
+function ckStore() { try { return JSON.parse(ls.get(CK_KEY) || '{}') || {}; } catch { return {}; } }
 function ckSetup() {
   const d = S.d, list = [], key = i => d.maps[d.map[i]] + '.' + d.name[i];
   for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L >= 0 && LAYERS[L].season) list.push(i); }
   const keys = new Map(list.map(i => [i, key(i)])); list.sort((a, b) => keys.get(a) < keys.get(b) ? -1 : 1);
   const bits = new Uint8Array((list.length + 7) >> 3), h = fnv(list.map(i => keys.get(i)).join('|')), rec = ckStore()[S.name];
-  let stale = false; if (rec) { if (rec.h === h && rec.n === list.length) bits.set(unb64(rec.b).subarray(0, bits.length)); else stale = true; }
+  let stale = false; if (rec) { if (rec.h === h && rec.n === list.length) { try { bits.set(unb64(rec.b).subarray(0, bits.length)); } catch { stale = true; } } else stale = true; }
   S.ck = { list, pos: new Map(list.map((i, k) => [i, k])), bits, h, stale };
 }
 const isDone = i => { const k = S.ck?.pos.get(i); return k !== undefined && (S.ck.bits[k >> 3] >> (k & 7) & 1) === 1; };
@@ -66,7 +67,7 @@ function ckToggle(i) {
   S.ck.bits[k >> 3] ^= 1 << (k & 7); S.ck.stale = false;
   const s = ckStore(), got = bitCount(S.ck.bits);
   if (got) s[S.name] = { h: S.ck.h, n: S.ck.list.length, b: b64(S.ck.bits), got }; else delete s[S.name];
-  localStorage.setItem(CK_KEY, JSON.stringify(s));
+  ls.set(CK_KEY, JSON.stringify(s));
   ckRefresh(); if (S.sel === i) select(i);
 }
 function ckRefresh() { seasonPanel(); draw2d(); if (V3.ready) V3.buildMarkers(); }
@@ -92,7 +93,9 @@ function inLoops(loops, x, y) {
 const regionAt = (x, y) => S.reg.find(r => inLoops(r.loops, x, y));
 
 function status(t) { $('#dname').textContent = t; }
-function progress(t) { const p = $('#progress'); p.style.display = t ? 'block' : 'none'; p.textContent = t || ''; }
+function progress(t) { const p = $('#progress'); clearTimeout(fail.t); p.classList.remove('err'); p.style.display = t ? 'block' : 'none'; p.textContent = t || ''; }
+function fail(t) { progress(t); $('#progress').classList.add('err'); fail.t = setTimeout(() => progress(''), 9000); }
+function setHash() { const o = { district: S.name }; if (S.sel >= 0) o.sel = S.sel; if (S.mode === '3d') o.mode = '3d'; history.replaceState(null, '', '#' + new URLSearchParams(o)); }
 function info(i) { const s = S.d.info[i]; const o = {}; if (s) s.split(' ').forEach(kv => { const [k, v] = kv.split('='); o[k] = v; }); return o; }
 function title(i) {
   const d = S.d, inf = info(i), L = S.layerOf[i];
@@ -115,24 +118,38 @@ async function init() {
   makeIcons();
   [S.index, S.regions] = await Promise.all([getJSON('data/index.json'), getJSON('data/regions.json').catch(() => null)]);
   const sel = $('#district');
-  S.index.districts.filter(d => d.placements > 100).forEach(d => sel.add(new Option(d.name.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2'), d.name)));
-  const h = new URLSearchParams(location.hash.slice(1)), want = h.get('district');
-  sel.value = S.index.districts.some(d => d.name === want) ? want : (S.index.districts.find(d => d.name.startsWith('Waterfront')) || S.index.districts[0]).name;
-  sel.onchange = () => loadDistrict(sel.value);
+  S.index.districts.filter(d => d.placements > 100 && !d.name.startsWith('_')).forEach(d => sel.add(new Option(d.name.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2'), d.name)));
+  sel.onchange = () => switchDistrict(sel.value);
   document.querySelectorAll('#modes button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   document.querySelectorAll('[data-opt]').forEach(r => r.onclick = () => { const k = r.dataset.opt; S.opt[k] = !S.opt[k]; r.querySelector('.switch').classList.toggle('on', S.opt[k]); if (k === 'textures') V3.applyTextures(); if (k === 'imagery') imagery(); else draw2d(); });
   $('#paneltoggle').onclick = () => $('#panel').classList.toggle('open');
   $('#zin').onclick = () => zoomBy(1.4); $('#zout').onclick = () => zoomBy(1 / 1.4);
   $('#btop').onclick = () => V3.top(); $('#bover').onclick = () => V3.overview();
   setupSearch();
-  await loadDistrict(sel.value);
-  const s = +h.get('sel'); if (h.has('sel') && s >= 0 && s < S.d.x.length) { select(s); centerOn(s); }
-  if (h.get('mode') === '3d') setMode('3d', h.has('sel') ? s : undefined);
+  await applyHash();
+  window.addEventListener('hashchange', () => /district=/.test(location.hash) && applyHash().catch(e => fail('Could not open that link: ' + e.message)));
+}
+async function applyHash() {
+  const sel = $('#district'), h = new URLSearchParams(location.hash.slice(1)), want = h.get('district'), names = [...sel.options].map(o => o.value);
+  const name = names.includes(want) ? want : names.find(n => n.startsWith('Waterfront')) || names[0];
+  sel.value = name;
+  if (S.name !== name || !S.d) await loadDistrict(name);
+  const s = Number(h.get('sel')), ok = h.has('sel') && h.get('sel') !== '' && Number.isInteger(s) && s >= 0 && s < S.d.x.length;
+  if (ok) { select(s); if (S.mode === '2d') centerOn(s); }
+  if (h.get('mode') === '3d' && S.mode !== '3d') await setMode('3d', ok ? s : undefined);
+  else if (h.get('mode') !== '3d' && S.mode === '3d') await setMode('2d');
+  else if (ok && S.mode === '3d') V3.flyTo(s);
+}
+async function switchDistrict(name) {
+  try { await loadDistrict(name); }
+  catch (e) { $('#district').value = S.name; fail(`Could not load ${name}: ${e.message}`); }
 }
 
 async function loadDistrict(name) {
+  const entry = S.index.districts.find(d => d.name === name); if (!entry) throw new Error('unknown district');
   progress('Loading ' + name + '…');
-  S.d = await getJSON('data/' + S.index.districts.find(d => d.name === name).file); S.name = name; S.hits = new Set(); S.sel = -1;
+  try { S.d = await getJSON('data/' + entry.file); } catch (e) { progress(''); throw e; }
+  S.name = name; S.hits = new Set(); S.sel = -1; V3.cancel();
   const d = S.d, n = d.x.length, byCls = new Map();
   LAYERS.forEach((l, k) => l.cls.forEach(c => { const i = d.classes.indexOf(c); if (i >= 0) byCls.set(i, k); }));
   S.layerOf = new Int8Array(n).fill(-1); S.counts = LAYERS.map(() => 0);
@@ -145,15 +162,15 @@ async function loadDistrict(name) {
   S.groupOn = S.groups.map(([g]) => S.groupWant?.[g] ?? !/purple/i.test(g)); S.hid = new Uint8Array(n); applySeason(false); ckSetup(); seasonPanel(); setupRegions();
   status($('#district').selectedOptions[0]?.text || name);
   const kc = S.index.kinds.map(() => 0); d.kind.forEach(k => kc[k]++); S.on = S.index.kinds.map(() => true);
-  $('#layers').innerHTML = (S.reg.length ? `<div class="row" data-reg style="--c:#b48cff"><div class="ic">${svg('region')}</div>Regions<span class="n">${S.reg.length}</span><span class="switch ${S.opt.regions ? 'on' : ''}"></span></div>` : '') + LAYERS.map((l, k) => S.counts[k] && !l.season ? `<div class="row" data-l="${k}" style="--c:${l.col}"><div class="ic">${svg(l.id)}</div>${l.name}<span class="n">${S.counts[k].toLocaleString()}</span><span class="switch ${S.layerOn[k] ? 'on' : ''}"></span></div>` : '').join('');
+  $('#layers').innerHTML = (S.reg.length ? `<div class="row" tabindex="0" data-reg style="--c:#b48cff"><div class="ic">${svg('region')}</div>Regions<span class="n">${S.reg.length}</span><span class="switch ${S.opt.regions ? 'on' : ''}"></span></div>` : '') + LAYERS.map((l, k) => S.counts[k] && !l.season ? `<div class="row" tabindex="0" data-l="${k}" style="--c:${l.col}"><div class="ic">${svg(l.id)}</div>${l.name}<span class="n">${S.counts[k].toLocaleString()}</span><span class="switch ${S.layerOn[k] ? 'on' : ''}"></span></div>` : '').join('');
   $('#layers').querySelectorAll('.row').forEach(r => r.onclick = () => { if (r.dataset.reg !== undefined) { S.opt.regions = !S.opt.regions; r.querySelector('.switch').classList.toggle('on', S.opt.regions); draw2d(); V3.dirty = true; return; } const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; r.querySelector('.switch').classList.toggle('on', S.layerOn[k]); draw2d(); V3.applyMarkers(); });
-  $('#kinds').innerHTML = S.index.kinds.map((k, i) => kc[i] ? `<div class="row" data-k="${i}"><span class="swatch" style="background:${S.index.colours[i]}"></span>${esc(k)}<span class="n">${kc[i].toLocaleString()}</span><span class="switch on"></span></div>` : '').join('');
+  $('#kinds').innerHTML = S.index.kinds.map((k, i) => kc[i] ? `<div class="row" tabindex="0" data-k="${i}"><span class="swatch" style="background:${S.index.colours[i]}"></span>${esc(k)}<span class="n">${kc[i].toLocaleString()}</span><span class="switch on"></span></div>` : '').join('');
   $('#kinds').querySelectorAll('.row').forEach(r => r.onclick = () => { const k = +r.dataset.k; S.on[k] = !S.on[k]; r.querySelector('.switch').classList.toggle('on', S.on[k]); draw2d(); if (V3.ready) V3.applyKinds(); });
   targetTypes(); missionMatches(); if (M.cur) drawMission(); S.hits = new Set(); $('#hitchip').style.display = 'none'; computeProps();
   $('#detail').style.display = 'none'; fit2d(); draw2d(); progress('');
   if (S.mode === '2d' && S.opt.imagery) imagery();
-  history.replaceState(null, '', '#district=' + encodeURIComponent(name));
-  if (S.mode === '3d') { await V3.build(); V3.builtFor = name; }
+  setHash();
+  if (S.mode === '3d') { try { await V3.build(); } catch (e) { fail('3D failed: ' + e.message); } }
 }
 
 function applySeason(redraw = true) {
@@ -162,7 +179,7 @@ function applySeason(redraw = true) {
 }
 function seasonPanel() {
   const el = $('#seasonal'); el.style.display = S.groups.length ? '' : 'none'; if (!S.groups.length) return;
-  const row = (attr, on, body, n) => `<div class="row" ${attr}>${body}<span class="n">${n}</span><span class="switch ${on ? 'on' : ''}"></span></div>`;
+  const row = (attr, on, body, n) => `<div class="row" tabindex="0" ${attr}>${body}<span class="n">${n}</span><span class="switch ${on ? 'on' : ''}"></span></div>`;
   const total = S.ck.list.length, got = total ? ckGot() : 0, others = Object.entries(ckStore()).filter(([n, r]) => n !== S.name && r.got);
   const dn = n => n.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
   $('#season').innerHTML = row('data-s="all"', S.season, '<b>Show seasonal content</b>', S.groups.reduce((a, g) => a + g[1], 0).toLocaleString())
@@ -175,7 +192,7 @@ function seasonPanel() {
       <div class="ckbtns"><button id="ckreset">Reset</button></div>
       <p class="hint" style="margin:6px 2px 0">Right-click a pumpkin (or open it and press <b>Mark collected</b>) to tick it off. Progress is saved in this browser.</p></div>` : '') + '</div>';
   $('#season').querySelectorAll('.row').forEach(r => r.onclick = () => {
-    if (r.dataset.ck) { S.ckHide = !S.ckHide; localStorage.setItem('apbmap-ckhide', S.ckHide ? '1' : '0'); ckRefresh(); return; }
+    if (r.dataset.ck) { S.ckHide = !S.ckHide; ls.set('apbmap-ckhide', S.ckHide ? '1' : '0'); ckRefresh(); return; }
     if (r.dataset.l !== undefined) { const k = +r.dataset.l; S.layerOn[k] = !S.layerOn[k]; seasonPanel(); draw2d(); V3.applyMarkers(); return; }
     if (r.dataset.s === 'all') S.season = !S.season; else { const k = +r.dataset.s; S.groupOn[k] = !S.groupOn[k]; S.groupWant = { ...S.groupWant, [S.groups[k][0]]: S.groupOn[k] }; }
     seasonPanel(); applySeason();
@@ -183,7 +200,7 @@ function seasonPanel() {
   if (!total) return;
   $('#ckreset').onclick = () => {
     if (!confirm('Clear every collected mark in all districts?')) return;
-    localStorage.removeItem(CK_KEY); ckSetup(); ckRefresh();
+    ls.set(CK_KEY, null); ckSetup(); ckRefresh();
   };
 }
 function reveal(list) {
@@ -242,7 +259,7 @@ function drawCheck(g, x, y, z) {
 async function imagery() {
   const on = S.mode === '2d' && S.opt.imagery;
   $('#c3d').style.display = S.mode === '3d' || on ? 'block' : 'none';
-  if (on) { V3.init(); V3.resize(); if (!V3.ready || V3.builtFor !== S.name) { try { await V3.build(); V3.builtFor = S.name; } catch (e) { progress(''); } } }
+  if (on) { try { V3.init(); V3.resize(); if (!V3.ready || V3.builtFor !== S.name) await V3.build(); } catch (e) { progress(''); if (V3.failed) { S.opt.imagery = false; $('#c3d').style.display = 'none'; const r = document.querySelector('[data-opt="imagery"] .switch'); if (r) r.classList.remove('on'); } } }
   draw2d();
 }
 let raf2d = 0;
@@ -295,11 +312,23 @@ cv2.onmousemove = e => {
 cv2.onmouseleave = () => { $('#tip').style.display = 'none'; if (S.regHover) { S.regHover = undefined; draw2d(); } };
 cv2.oncontextmenu = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0 && S.ck?.pos.has(i)) { e.preventDefault(); ckToggle(i); } };
 cv2.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.25 : 0.8, e.clientX, e.clientY); }, { passive: false });
-cv2.onclick = e => { if (moved) return; const i = pick2d(e.clientX, e.clientY); if (i >= 0) select(i); else { S.sel = -1; $('#detail').style.display = 'none'; draw2d(); } };
+cv2.onclick = e => { if (moved) return; const i = pick2d(e.clientX, e.clientY); if (i >= 0) select(i); else deselect(); };
+function deselect() { S.sel = -1; $('#detail').style.display = 'none'; V3.unmark(); draw2d(); setHash(); }
 cv2.ondblclick = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0) { select(i); setMode('3d', i); } };
 let touch = null;
-cv2.addEventListener('touchstart', e => { const t = e.touches; touch = t.length === 2 ? { d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), sc: C2.sc } : { x: t[0].clientX, y: t[0].clientY, cx: C2.cx, cy: C2.cy }; }, { passive: true });
-cv2.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches; if (t.length === 2 && touch.d) { C2.sc = touch.sc * Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) / touch.d; } else if (t.length === 1 && touch.x !== undefined) { C2.cx = touch.cx - (t[0].clientX - touch.x) / C2.sc; C2.cy = touch.cy - (t[0].clientY - touch.y) / C2.sc; } draw2d(); }, { passive: false });
+const touchStart = t => { if (t.length >= 2) { const mx = (t[0].clientX + t[1].clientX) / 2, my = (t[0].clientY + t[1].clientY) / 2; return { d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), sc: C2.sc, wx: (mx - C2.W / 2) / C2.sc + C2.cx, wy: (my - C2.H / 2) / C2.sc + C2.cy }; } return t.length ? { x: t[0].clientX, y: t[0].clientY, cx: C2.cx, cy: C2.cy } : null; };
+cv2.addEventListener('touchstart', e => { touch = touchStart(e.touches); }, { passive: true });
+cv2.addEventListener('touchend', e => { touch = touchStart(e.touches); }, { passive: true });
+cv2.addEventListener('touchcancel', () => { touch = null; }, { passive: true });
+cv2.addEventListener('touchmove', e => {
+  e.preventDefault(); const t = e.touches; if (!touch) return;
+  if (t.length >= 2 && touch.d) {
+    const mx = (t[0].clientX + t[1].clientX) / 2, my = (t[0].clientY + t[1].clientY) / 2;
+    C2.sc = Math.min(2, Math.max(C2.min || 0, touch.sc * Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) / touch.d));
+    C2.cx = touch.wx - (mx - C2.W / 2) / C2.sc; C2.cy = touch.wy - (my - C2.H / 2) / C2.sc;
+  } else if (t.length === 1 && touch.x !== undefined) { C2.cx = touch.cx - (t[0].clientX - touch.x) / C2.sc; C2.cy = touch.cy - (t[0].clientY - touch.y) / C2.sc; }
+  draw2d();
+}, { passive: false });
 
 function select(i) {
   S.sel = i; draw2d(); V3.mark(i);
@@ -313,15 +342,15 @@ function select(i) {
   const near = nearby(i); if (near) rows.push(['Nearby', near]);
   const ck = S.ck?.pos.has(i), done = isDone(i);
   const el = $('#detail'); el.style.display = 'block';
-  el.innerHTML = `<button class="x" id="dx">✕</button><div class="t">${esc(title(i))}</div><div class="s">${L >= 0 ? LAYERS[L].one : esc(S.index.kinds[d.kind[i]])}</div>
+  el.innerHTML = `<button class="x" id="dx" aria-label="Close">✕</button><div class="t">${esc(title(i))}</div><div class="s">${L >= 0 ? LAYERS[L].one : esc(S.index.kinds[d.kind[i]])}</div>
     <div class="kv">${rows.map(r => `<span>${r[0]}</span><span>${esc(r[1])}</span>`).join('')}</div>
     ${ck ? `<div class="acts"><button id="dck" class="${done ? 'ckon' : ''}">${done ? '✓ Collected' : 'Mark collected'}</button></div>` : ''}
     <div class="acts"><button class="primary" id="d3">${S.mode === '3d' ? 'Fly here' : 'View in 3D'}</button><button id="dl">Copy link</button></div>`;
-  $('#dx').onclick = () => { el.style.display = 'none'; S.sel = -1; draw2d(); };
+  $('#dx').onclick = deselect;
   if (ck) $('#dck').onclick = () => ckToggle(i);
   $('#d3').onclick = () => S.mode === '3d' ? V3.flyTo(i) : setMode('3d', i);
-  $('#dl').onclick = () => { const u = location.href.split('#')[0] + '#' + new URLSearchParams({ district: S.name, sel: i, mode: S.mode }); navigator.clipboard?.writeText(u); $('#dl').textContent = 'Copied'; };
-  history.replaceState(null, '', '#' + new URLSearchParams({ district: S.name, sel: i }));
+  $('#dl').onclick = async () => { const u = location.href.split('#')[0] + '#' + new URLSearchParams({ district: S.name, sel: i, mode: S.mode }); try { await navigator.clipboard.writeText(u); $('#dl').textContent = 'Copied'; } catch { prompt('Copy this link:', u); } };
+  setHash();
 }
 function nearby(i) {
   const d = S.d, c = {};
@@ -374,11 +403,12 @@ function setupSearch() {
         d.mesh.forEach(add); for (const [, m] of d.extra || []) add(m);
         models = [...mc].sort((a, b) => b[1] - a[1]).slice(0, 8);
       }
-      for (let i = 0; i < d.x.length && res.length < 40; i++) {
+      const top = [], rest = [];
+      for (let i = 0; i < d.x.length && top.length < 40; i++) {
         const L = S.layerOf[i], t = (L >= 0 || d.labels[i]) ? title(i) : '';
-        if ((t && t.toLowerCase().includes(q)) || d.name[i].toLowerCase().includes(q) || d.classes[d.cls[i]].toLowerCase() === q) res.push(i);
+        if ((t && t.toLowerCase().includes(q)) || d.name[i].toLowerCase().includes(q) || d.classes[d.cls[i]].toLowerCase() === q) (L >= 0 ? top : rest.length < 40 ? rest : []).push(i);
       }
-      res.sort((a, b) => (S.layerOf[b] >= 0) - (S.layerOf[a] >= 0));
+      res = top.concat(rest);
     }
     cur = 0; box.style.display = q.length >= 2 ? 'block' : 'none';
     const cube = '<span class="ic" style="--c:#9ad0ff"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span>';
@@ -423,29 +453,32 @@ function fetchFile(name, size) {
     for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); DL.got += value.length; dlShow(); }
     const blob = new Blob(parts);
     return name.endsWith('.gz') ? new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : blob.arrayBuffer();
-  })());
+  })().catch(e => { FILES.delete(name); throw e; }));
   return FILES.get(name);
 }
 function texture(id, r) {
+  if (!S.d.texLoc[id]) return Promise.resolve(null);
   if (!TEX.has(id)) TEX.set(id, (async () => {
     const d = S.d, [c, off, len] = d.texLoc[id], [fn, size] = d.texFiles[c];
     const bmp = await createImageBitmap(new Blob([(await fetchFile(fn, size)).slice(off, off + len)], { type: 'image/webp' }));
     const t = new THREE.Texture(bmp); t.flipY = false; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = r.capabilities.getMaxAnisotropy(); t.needsUpdate = true;
     return t;
-  })());
+  })().catch(e => { TEX.delete(id); throw e; }));
   return TEX.get(id);
 }
 function useTexture(m, r) {
   const tid = m.userData.tid;
   V3.dirty = true; if (tid < 0 || !S.opt.textures) { m.map = null; m.color.set(m.userData.col); m.needsUpdate = true; return; }
-  texture(tid, r).then(t => { if (!S.opt.textures) return; m.map = t; m.color.set(0xffffff); m.needsUpdate = true; V3.dirty = true; if (S.mode === '2d') draw2d(); }).catch(() => {});
+  texture(tid, r).then(t => { if (!t || !S.opt.textures || V3.mats.get(m.userData.key) !== m) return; m.map = t; m.color.set(0xffffff); m.needsUpdate = true; V3.dirty = true; if (S.mode === '2d') draw2d(); }).catch(() => {});
 }
 const V3 = {
   ready: false, renderer: null, scene: null, cam: null, groups: [], markers: [], marker: null, mats: new Map(),
   yaw: 0, pitch: -0.3, speed: 2000, keys: new Set(),
+  seq: 0, builtFor: null, failed: false,
   init() {
     if (this.renderer) return;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true }); this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); $('#c3d').appendChild(this.renderer.domElement);
+    if (this.failed) throw new Error('3D view is not supported by this browser (WebGL unavailable)');
+    try { this.renderer = new THREE.WebGLRenderer({ antialias: true }); } catch (e) { this.failed = true; throw new Error('3D view is not supported by this browser (WebGL unavailable)'); } this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); $('#c3d').appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0xa9bccd); this.scene.fog = new THREE.Fog(0xa9bccd, 20000, 120000);
     this.cam = new THREE.PerspectiveCamera(60, 1, 20, 400000);
     this.scene.add(new THREE.HemisphereLight(0xe8eef5, 0x4a4438, 2.0));
@@ -462,6 +495,7 @@ const V3 = {
     el.addEventListener('wheel', e => { e.preventDefault(); this.speed = Math.max(100, Math.min(50000, this.speed * (e.deltaY < 0 ? 1.25 : 0.8))); this.help(); }, { passive: false });
     window.addEventListener('keydown', e => { if (S.mode === '3d' && !['INPUT', 'SELECT'].includes(document.activeElement.tagName)) { this.keys.add(e.key.toLowerCase()); if (e.key.startsWith('Arrow')) e.preventDefault(); } });
     window.addEventListener('keyup', e => this.keys.delete(e.key.toLowerCase()));
+    window.addEventListener('blur', () => this.keys.clear()); document.addEventListener('visibilitychange', () => this.keys.clear());
     $('#mini canvas').onclick = e => { const r = e.target.getBoundingClientRect(), [x, y] = this.miniToWorld((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); this.cam.position.x = x; this.cam.position.z = y; };
     let last = performance.now();
     const loop = t => { const dt = Math.min(0.1, (t - last) / 1000); last = t; if (S.mode === '3d') this.frame(dt); requestAnimationFrame(loop); };
@@ -483,20 +517,25 @@ const V3 = {
     const key = col + '|' + tid;
     if (!this.mats.has(key)) {
       const m = new THREE.MeshStandardMaterial({ color: col, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide });
-      m.userData = { col, tid }; useTexture(m, this.renderer); this.mats.set(key, m);
+      m.userData = { col, tid, key }; this.mats.set(key, m); useTexture(m, this.renderer);
     }
     return this.mats.get(key);
   },
   applyTextures() { for (const m of this.mats.values()) useTexture(m, this.renderer); },
+  cancel() { this.seq++; if (this.scene) this.clear(); },
   async build() {
     this.init(); this.clear();
-    if (!S.meshes) { progress('Loading model index…'); S.meshes = await getJSON('data/meshes.json'); }
+    const tok = ++this.seq, name = S.name, stale = () => tok !== this.seq || S.name !== name;
+    if (!S.meshes) { progress('Loading model index…'); try { S.meshes = await getJSON('data/meshes.json'); } catch (e) { progress(''); throw e; } if (stale()) { if (!DL.on) progress(''); return; } }
     const dist = S.index.districts.find(d => d.name === S.name), d = S.d, by = new Map();
+    const keep = new Set(d.meshFiles.concat(d.texFiles).map(([fn]) => fn)); for (const k of [...FILES.keys()]) if (!keep.has(k)) FILES.delete(k);
     const add = (m, i) => { if (!by.has(m)) by.set(m, []); by.get(m).push(i); };
     for (let i = 0; i < d.x.length; i++) if (d.mesh[i] >= 0) add(d.mesh[i], i);
     for (const [i, m] of d.extra || []) add(m, i);
+    if (!DL.on) DL.got = DL.total = 0;
     DL.on++; dlShow();
-    let bufs; try { bufs = await Promise.all(d.meshFiles.map(([fn, size]) => fetchFile(fn, size))); } finally { DL.on--; }
+    let bufs; try { bufs = await Promise.all(d.meshFiles.map(([fn, size]) => fetchFile(fn, size))); } catch (e) { if (DL.on === 1) progress(''); throw e; } finally { DL.on--; }
+    if (stale()) { if (!DL.on) progress(''); return; }
     for (const [fn, size] of d.texFiles) fetchFile(fn, size).catch(() => {});
     progress('Building the scene…');
     for (const [id, list] of by) {
@@ -508,7 +547,8 @@ const V3 = {
     const zs = Array.from(d.z).sort((a, b) => a - b), z0 = zs[Math.floor(zs.length * 0.05)] || 0, [x0, y0, x1, y1] = dist.bounds;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 40000, y1 - y0 + 40000), new THREE.MeshStandardMaterial({ color: 0x1f2227, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.set((x0 + x1) / 2, z0 - 60, (y0 + y1) / 2); this.scene.add(ground); this.groups.push(ground);
-    this.z0 = z0; this.ready = true; this.applyKinds(); this.buildMarkers(); this.missionSprites(); this.hitSprites();
+    d.meshFiles.forEach(([fn]) => FILES.delete(fn));
+    this.z0 = z0; this.ready = true; this.builtFor = name; this.applyKinds(); this.buildMarkers(); this.missionSprites(); this.hitSprites();
     if (S.sel >= 0) this.flyTo(S.sel); else this.overview();
     progress(''); this.help();
   },
@@ -550,7 +590,11 @@ const V3 = {
       this.msprites.push(this.points(list, 180, this.stageTex[k], 26, 12));
     }
   },
-  clear() { for (const o of this.groups) { this.scene.remove(o); o.geometry?.dispose(); } this.groups = []; this.markers = this.drop(this.markers); this.hsprites = this.drop(this.hsprites); this.msprites = this.drop(this.msprites); this.ready = false; },
+  clear() {
+    for (const o of this.groups) { this.scene.remove(o); o.geometry?.dispose(); o.dispose?.(); if (o.material && !Array.isArray(o.material)) o.material.dispose(); } this.groups = [];
+    for (const m of this.mats.values()) m.dispose(); this.mats.clear();
+    for (const t of TEX.values()) t.then(x => x?.dispose(), () => {}); TEX.clear();
+    this.builtFor = null; this.unmark(); this.markers = this.drop(this.markers); this.hsprites = this.drop(this.hsprites); this.msprites = this.drop(this.msprites); this.ready = false; },
   applyKinds() {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (const im of this.groups) { if (!im.isInstancedMesh) continue; im.userData.placements.forEach((pi, k) => im.setMatrixAt(k, S.on[S.d.kind[pi]] && !S.hid[pi] ? ueMatrix(pi) : zero)); im.instanceMatrix.needsUpdate = true; }
@@ -564,6 +608,7 @@ const V3 = {
     p.set(Math.min(x1, Math.max(x0, tx)), z0 + Math.min(s * 0.35, Math.max(8000, p.y - z0)), Math.min(y1, Math.max(y0, ty))); this.yaw = 0; this.pitch = -Math.PI / 2 + 1e-4;
   },
   lookAt(x, y, z) { const p = this.cam.position, dx = x - p.x, dy = y - p.y, dz = z - p.z; this.yaw = Math.atan2(-dx, -dz); this.pitch = Math.atan2(dy, Math.hypot(dx, dz)); },
+  unmark() { if (this.marker) { this.marker.visible = false; this.dirty = true; } },
   mark(i) { if (!this.marker) return; const d = S.d; this.marker.position.set(d.x[i], d.z[i] + 40, d.y[i]); this.marker.visible = true; },
   pick(e) {
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), this.cam);
@@ -622,16 +667,16 @@ const V3 = {
   },
 };
 
-async function setMode(m, focus) {
+async function setMode(m, focus, quiet) {
   S.mode = m; document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
   $('#c2d').style.display = m === '2d' ? 'block' : 'none'; $('#c3d').style.display = m === '3d' ? 'block' : 'none';
   $('#mini').style.display = m === '3d' ? 'block' : 'none'; $('#zoom').style.display = m === '2d' ? 'flex' : 'none';
   $('#v3btns').style.display = m === '3d' ? 'flex' : 'none'; $('#tip').style.display = 'none'; V3.help();
   const b3 = $('#d3'); if (b3) b3.textContent = m === '3d' ? 'Fly here' : 'View in 3D';
-  if (m === '2d') { resize2d(); imagery(); return; }
-  V3.init(); V3.resize();
-  try { if (!V3.ready || V3.builtFor !== S.name) { await V3.build(); V3.builtFor = S.name; } } catch (e) { progress(''); status('3D failed: ' + e.message); return; }
-  if (focus !== undefined) V3.flyTo(focus);
+  setHash();
+  if (m === '2d') { resize2d(); if (quiet) { $('#c3d').style.display = 'none'; draw2d(); } else imagery(); return; }
+  try { V3.init(); V3.resize(); if (!V3.ready || V3.builtFor !== S.name) await V3.build(); } catch (e) { if (S.mode === '3d') setMode('2d', undefined, true); fail('3D failed: ' + e.message); return; }
+  if (focus !== undefined && V3.ready) V3.flyTo(focus);
 }
 for (const k of ['applyKinds', 'applyMarkers', 'hitSprites', 'missionSprites', 'mark', 'resize', 'build', 'applyTextures', 'flyTo', 'overview', 'top']) { const f = V3[k]; V3[k] = function (...a) { const r = f.apply(this, a); this.dirty = true; if (r && r.then) r.then(() => this.dirty = true); return r; }; }
 window.addEventListener('resize', () => { if (V3.renderer) V3.resize(); if (S.mode === '2d') { resize2d(); draw2d(); } });
@@ -681,8 +726,10 @@ function drawMissionList() {
 }
 async function selectMission(key) {
   $('#mlist').style.display = 'none'; const v = $('#mview'); v.style.display = 'block'; v.innerHTML = '<p class="dim">Loading mission…</p>';
-  try { M.cur = await cachedJSON(API + 'missions/' + encodeURIComponent(key), 'apbdb-mission-' + key); } catch (e) { v.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
-  M.on = M.cur.aStages.map((_, k) => k === 0); missionMatches(); drawMission(); refreshMission();
+  try {
+    M.cur = await cachedJSON(API + 'missions/' + encodeURIComponent(key), 'apbdb-mission-' + key); M.cur.aStages ||= [];
+    M.on = M.cur.aStages.map((_, k) => k === 0); missionMatches(); drawMission(); refreshMission();
+  } catch (e) { M.cur = null; M.match = []; M.contacts = []; v.innerHTML = `<p class="bad">${esc(e.message)}</p><a href="#" id="mback" class="hint">← All missions</a>`; $('#mback').onclick = ev => { ev.preventDefault(); v.style.display = 'none'; $('#mlist').style.display = 'block'; }; }
 }
 function drawMission() {
   const m = M.cur, v = $('#mview'), r = m.eRewardPackage || {};
@@ -704,7 +751,7 @@ function drawMission() {
     <div style="display:flex;gap:8px;margin-top:10px"><button id="mfit">Show all spots</button><button id="mclear">Clear mission</button></div>`;
   $('#mback').onclick = e => { e.preventDefault(); $('#mview').style.display = 'none'; $('#mlist').style.display = 'block'; };
   v.querySelectorAll('[data-s]').forEach(sw => sw.onclick = () => { const k = +sw.dataset.s; M.on[k] = !M.on[k]; sw.classList.toggle('on', M.on[k]); M.ver++; refreshMission(); });
-  v.querySelectorAll('[data-go]').forEach(a => a.onclick = async e => { e.preventDefault(); $('#district').value = a.dataset.go; await loadDistrict(a.dataset.go); });
+  v.querySelectorAll('[data-go]').forEach(a => a.onclick = async e => { e.preventDefault(); $('#district').value = a.dataset.go; await switchDistrict(a.dataset.go); });
   const mc = $('#mcontact'); if (mc) mc.onclick = e => { e.preventDefault(); const i = M.contacts[0]; select(i); if (S.mode === '3d') V3.flyTo(i); else centerOn(i); };
   $('#mfit').onclick = () => fitMission(); $('#mclear').onclick = () => { M.cur = null; missionMatches(); refreshMission(); $('#mview').style.display = 'none'; $('#mlist').style.display = 'block'; };
 }
@@ -728,7 +775,9 @@ function drawMission2d(g, tr, W, H) {
 }
 $('#mbtn').onclick = () => document.body.classList.contains('mopen') ? document.body.classList.remove('mopen') : openMissions();
 $('#mx').onclick = () => document.body.classList.remove('mopen');
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('row')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if (e.key !== 'Escape' || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; if ($('#detail').style.display === 'block') deselect(); else document.body.classList.remove('mopen'); });
 $('#mq').oninput = () => M.list && drawMissionList();
 document.querySelectorAll('#mfac button').forEach(b => b.onclick = () => { M.filter = b.dataset.f; document.querySelectorAll('#mfac button').forEach(x => x.classList.toggle('on', x === b)); if (M.list) drawMissionList(); });
 window.APB = { S, V3, C2 };
-init().catch(e => { progress(''); status('failed: ' + e.message); });
+init().catch(e => fail('The map could not load: ' + e.message));

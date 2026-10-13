@@ -1,4 +1,4 @@
-import { $, h, render, readFile, saveFile, colourPick, seg, colourText, hex2rgb, intValue, store, FONTS } from './core.js';
+import { h, render, readFile, saveFile, colourPick, seg, colourText, hex2rgb, intValue, store, FONTS } from './core.js';
 import { LOC, readLoc, onFolder, inGame } from './folder.js';
 
 const HUD = /^(hudmessages|taskobjectives|dailyactivitycontacts|popupdialogs|hudconstantstring|taskoperationuiprofile)$/i;
@@ -31,22 +31,24 @@ export function initEditor(root) {
   const kind = () => F && HUD.test(F.name.replace(/\.[^.]+$/, '')) ? 'hud' : 'ui';
   const tools = h('div', { class: 'card glass', hidden: true });
 
+  let loadSeq = 0;
   const load = async src => {
-    F = src; undo = [];
-    const lines = F.text.split(/\r\n|\n|\r/); let sec = ''; rows = [];
+    F = src; undo = []; const tok = ++loadSeq;
+    const parts = F.text.split(/(\r\n|\n|\r)/), lines = parts.filter((x, k) => k % 2 === 0); let sec = ''; rows = [];
+    F.eols = parts.filter((x, k) => k % 2 === 1);
     lines.forEach((l, i) => {
       const s = l.trim();
       if (s.startsWith('[') && s.endsWith(']')) { sec = s.slice(1, -1); return; }
       const eq = l.indexOf('=');
-      if (eq > 0 && !s.startsWith(';')) { let v = l.slice(eq + 1); if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1); rows.push({ i, sec, key: l.slice(0, eq), val: v, orig: v }); }
+      if (eq > 0 && !s.startsWith(';')) { let v = l.slice(eq + 1); const quoted = v.length > 1 && v.startsWith('"') && v.endsWith('"'); if (quoted) v = v.slice(1, -1); rows.push({ i, sec, key: l.slice(0, eq), val: v, orig: v, quoted }); }
     });
     F.lines = lines;
     secSel.innerHTML = ''; secSel.append(h('option', { value: '' }, 'All sections'), [...new Set(rows.map(r => r.sec))].map(s => h('option', { value: s }, s)));
     GAME = null; const stem = F.name.replace(/\.[^.]+$/, '');
-    inGame(stem).then(g => { GAME = g.base.size ? g.base : null; if (showGame.checked) draw(); });
+    inGame(stem).then(g => { if (tok !== loadSeq) return; GAME = g.base.size ? g.base : null; if (showGame.checked) draw(); }).catch(() => {});
     tools.hidden = false; drawTools(); filter();
   };
-  fileIn.onchange = async () => { const f = fileIn.files[0]; if (f) await load(await readFile(f)); };
+  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { await load(await readFile(f)); } catch (e) { status.textContent = 'Could not read that file: ' + e.message; } };
   const dirSel = h('select', { onchange: async () => { const x = LOC.files[+dirSel.value]; if (x) { const r = await readLoc(x); await load({ ...r, name: x.name }); } } });
   const fillDir = () => {
     dirSel.innerHTML = '';
@@ -116,9 +118,8 @@ export function initEditor(root) {
   };
   const saveIt = () => {
     if (!F) return;
-    const lines = F.lines.slice(); rows.forEach(r => { if (r.val !== r.orig) lines[r.i] = `${r.key}=${intValue(r.val)}`; });
-    const eol = F.text.includes('\r\n') ? '\r\n' : '\n';
-    saveFile({ text: lines.join(eol), enc: F.enc, bom: F.bom }, F.name);
+    const lines = F.lines.slice(); rows.forEach(r => { if (r.val !== r.orig) lines[r.i] = `${r.key}=${r.quoted ? `"${r.val}"` : intValue(r.val)}`; });
+    saveFile({ text: lines.map((l, i) => l + (F.eols[i] || '')).join(''), enc: F.enc, bom: F.bom }, F.name);
   };
   [q, secSel].forEach(e => e.addEventListener('input', filter)); onlyCh.onchange = filter;
   root.append(h('div', { class: 'card glass' }, h('h3', {}, 'Localisation editor'),

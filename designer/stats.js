@@ -46,8 +46,22 @@ export function weaponStats(t, mods, useMods, C) {
   return s;
 }
 
-export function vehicleStats(v, useMods) {
-  let cargo = v.cargo; const names = [];
-  for (const m of useMods ? v.mods : []) { names.push(m.name); for (const [k, mul, add] of m.eff) if (k === 'cargo') cargo = cargo * mul + add; }
-  return { ...v, cargo: Math.round(cargo), modNames: names };
+const plainDesc = s => String(s || '').replace(/<[^<>]*>/g, '');
+export function vehAdd(t, mul, add, desc) { if (t !== 121 || mul !== 1 || !add) return add; const m = /([+-]?\d+(?:\.\d+)?)\s*m\/s/i.exec(plainDesc(desc)); return m ? +m[1] : add; }
+export function applyVehMod(a, eff) {
+  for (const [t, mul, add, desc] of eff) {
+    if (t === 118) a.health = a.health * mul + add; else if (t === 121) a.speed = a.speed * mul + vehAdd(t, mul, add, desc); else if (t === 114) a.cargo = a.cargo * mul + add;
+    else if (t === 16) a.gun *= mul; else if (t === 14) a.col *= mul; else if (t === 44 && a.er !== null) a.er *= mul; else if (t === 109 && a.emp !== null) a.emp *= mul;
+  }
+  return a;
+}
+export function vehicleStats(v, useMods, defs) {
+  const a = { health: v.health, speed: v.speed, cargo: v.cargo, gun: 1, col: 1, er: v.exp ? v.exp.r : null, emp: v.emp === undefined ? null : v.emp }, names = [];
+  const by = defs ? new Map(defs.map(d => [d.row, d])) : null;
+  for (const m of useMods ? v.mods : []) {
+    names.push(m.name);
+    const d = by && (by.get(m.row) || by.get(m.row.replace(/_Joker$/, '')));
+    if (d) applyVehMod(a, d.eff); else for (const [k, mul, add] of m.eff) if (k === 'cargo') a.cargo = a.cargo * mul + add;
+  }
+  return { ...v, health: Math.round(a.health), speed: +a.speed.toFixed(2), cargo: Math.round(a.cargo), exp: v.exp ? { ...v.exp, r: a.er } : v.exp, emp: a.emp === null ? undefined : a.emp, gun: a.gun, col: a.col, modNames: names };
 }

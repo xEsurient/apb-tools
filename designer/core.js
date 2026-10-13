@@ -66,12 +66,12 @@ export function colourText(text, opt) {
   };
   const tag = c => kind === 'hud' ? (nearestNamed(c) || { name: 'White' }).name : apbTag(c);
   const colours = new Map(); vis.forEach((c, i) => colours.set(c, tag(colOf(i))));
-  let out = '', cur = null;
+  let out = '', cur = null, k = 0;
   const open = t => kind === 'hud' ? `<col:${t}>` : t, close = () => kind === 'hud' ? '</col>' : '<Color:/>';
-  parts.forEach((p, pi) => {
+  parts.forEach(p => {
     if (/^(<[^<>]*>|↵|\\n)$/.test(p)) { if (cur && p !== '↵' && p !== '\\n') { out += close(); cur = null; } out += p; return; }
-    [...p].forEach((ch, ci) => {
-      const c = chars.find(x => x.pi === pi && x.ci === ci), t = colours.get(c);
+    [...p].forEach(ch => {
+      const c = chars[k++], t = colours.get(c);
       if (t && t !== cur) { if (cur) out += close(); out += open(t); cur = t; }
       out += ch;
     });
@@ -165,6 +165,7 @@ export function buildFile(section, lines, base) {
 }
 export function saveFile(f, name) { download(new Blob([encodeText(f.text, f.enc, f.bom)], { type: 'text/plain' }), name); }
 
+export async function copyText(t) { try { await navigator.clipboard.writeText(t); return true; } catch { return false; } }
 export function seg(options, value, onChange) {
   const box = h('div', { class: 'seg glass' });
   const set = v => { value = v; $$('button', box).forEach(b => b.classList.toggle('on', b.dataset.v === v)); };
@@ -173,7 +174,9 @@ export function seg(options, value, onChange) {
 }
 export function toggle(label, value, onChange, title) {
   const sw = h('span', { class: 'switch' + (value ? ' on' : '') });
-  return h('label', { class: 'opt', title, onclick: e => { e.preventDefault(); value = !value; sw.classList.toggle('on', value); onChange(value); } }, sw, label);
+  const flip = () => { value = !value; sw.classList.toggle('on', value); el.setAttribute('aria-checked', String(value)); onChange(value); };
+  const el = h('label', { class: 'opt', title, role: 'switch', tabindex: '0', 'aria-checked': String(!!value), onclick: e => { if (e.target.closest('a')) return; e.preventDefault(); flip(); }, onkeydown: e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } } }, sw, label);
+  return el;
 }
 const lum = c => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
 const namedRow = (n, label) => {
@@ -183,11 +186,11 @@ const namedRow = (n, label) => {
 };
 export function namedSelect({ value, list, onChange, extra = [] }) {
   const find = v => list.find(n => n.name === v);
-  const wrap = h('span', { class: 'nsel' }), btn = h('button', { type: 'button', class: 'nsbtn' }), pop = h('div', { class: 'nspop', hidden: true });
+  const wrap = h('span', { class: 'nsel' }), btn = h('button', { type: 'button', class: 'nsbtn', 'aria-haspopup': 'listbox', 'aria-expanded': 'false' }), pop = h('div', { class: 'nspop', hidden: true });
   const q = h('input', { type: 'search', placeholder: 'Search colours…' }), ul = h('div', { class: 'nslist' });
   const label = v => { const e = extra.find(x => x[0] === v); return e ? namedRow(null, e[1]) : namedRow(find(v), v); };
   const setBtn = () => btn.replaceChildren(...label(value), h('span', { class: 'nscaret' }, '▾'));
-  const pick = v => { value = v; setBtn(); close(); onChange(v); };
+  const pick = v => { value = v; setBtn(); close(true); onChange(v); };
   const fill = () => {
     const t = q.value.toLowerCase().trim();
     const seen = new Set();
@@ -196,17 +199,17 @@ export function namedSelect({ value, list, onChange, extra = [] }) {
   };
   const outside = e => { if (!wrap.contains(e.target) && !pop.contains(e.target)) close(); };
   const onScroll = e => { if (!pop.contains(e.target)) close(); };
-  const close = () => { pop.hidden = true; pop.remove(); document.removeEventListener('mousedown', outside); window.removeEventListener('scroll', onScroll, true); };
+  const close = refocus => { const was = !pop.hidden; pop.hidden = true; pop.remove(); btn.setAttribute('aria-expanded', 'false'); document.removeEventListener('mousedown', outside); window.removeEventListener('scroll', onScroll, true); if (was && refocus === true) btn.focus(); };
   btn.onclick = () => {
     if (!pop.hidden) return close();
     const r = btn.getBoundingClientRect(), below = window.innerHeight - r.bottom;
-    pop.style.left = `${Math.min(r.left, window.innerWidth - 290)}px`;
+    pop.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - 290))}px`;
     if (below < 360 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 4}px`; } else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 4}px`; }
-    document.body.append(pop); pop.hidden = false; q.value = ''; fill(); q.focus(); const on = ul.querySelector('.on'); if (on) on.scrollIntoView({ block: 'center' });
+    document.body.append(pop); pop.hidden = false; btn.setAttribute('aria-expanded', 'true'); q.value = ''; fill(); q.focus(); const on = ul.querySelector('.on'); if (on) on.scrollIntoView({ block: 'center' });
     document.addEventListener('mousedown', outside); window.addEventListener('scroll', onScroll, true);
   };
   q.oninput = fill;
-  q.onkeydown = e => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const f = ul.querySelector('.nsopt'); if (f) f.click(); } };
+  q.onkeydown = e => { if (e.key === 'Escape') close(true); if (e.key === 'Enter') { const f = ul.querySelector('.nsopt'); if (f) f.click(); } };
   pop.append(q, ul); wrap.append(btn); setBtn();
   return wrap;
 }
@@ -218,6 +221,6 @@ export function colourPick(kind, value, onChange) {
 }
 export const wrapColour = (text, colour, kind) => !colour ? text : kind === 'hud' ? `<col:${colour}>${text}</col>` : `${apbTag(hex2rgb(colour))}${text}<Color:/>`;
 export const store = {
-  get(k, d) { try { const v = JSON.parse(localStorage.getItem('apbdesigner-' + k)); return v === null ? d : { ...d, ...v }; } catch { return d; } },
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem('apbdesigner-' + k)); if (v === null || typeof v !== 'object' || Array.isArray(v)) return d; const o = { ...d, ...v }; for (const [x, dv] of Object.entries(d || {})) if (dv && typeof dv === 'object' && !Array.isArray(dv) && o[x] && typeof o[x] === 'object' && !Array.isArray(o[x])) o[x] = { ...dv, ...o[x] }; return o; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('apbdesigner-' + k, JSON.stringify(v)); } catch { } }
 };

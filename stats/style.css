@@ -1,11 +1,11 @@
 .modslots{gap:12px;flex-wrap:wrap}.modslots .slot{display:flex;flex-direction:column;gap:4px}.modslots select{min-width:220px}
-.cmpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:12px;margin-top:12px;align-items:start}
+.cmpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(440px,100%),1fr));gap:12px;margin-top:12px;align-items:start}
 .cmpcard{padding:10px 12px}.cmphead{display:flex;gap:10px;align-items:center;margin-bottom:6px}.cmphead small{display:block}
 table.cmp{width:100%;font-size:12.5px}table.cmp td,table.cmp th{padding:3px 6px;text-align:right;white-space:nowrap}table.cmp td.nm,table.cmp th:first-child{text-align:left}table.cmp td.nm{white-space:normal;min-width:160px;max-width:320px}
 table.cmp td.up{color:#5dff6a}table.cmp td.down{color:#ff6262}table.cmp td small{font-size:9px}
 table.cmp td.pos{color:#5dff6a}table.cmp td.neg{color:#ff6262}table.cmp td.nm.pos,table.cmp td.nm.neg{color:inherit}
 .modbtn{display:inline-flex;align-items:center;gap:8px;min-width:230px;max-width:300px;padding:4px 10px;text-align:left}.modbtn span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.modbtn i{font-style:normal;color:var(--dim);font-size:11px}
-.modpop{position:fixed;z-index:1000;width:320px;background:#15171b;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.55);padding:6px}.modpop input{width:100%;box-sizing:border-box;margin-bottom:6px}
+.modpop{position:fixed;z-index:1000;width:min(320px,calc(100vw - 8px));box-sizing:border-box;background:#15171b;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.55);padding:6px}.modpop input{width:100%;box-sizing:border-box;margin-bottom:6px}
 .modlist{max-height:380px;overflow:auto;display:flex;flex-direction:column;gap:1px}.modgrp{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding:6px 6px 2px}
 .modopt{display:flex;align-items:center;gap:8px;border:0;background:none;padding:3px 6px;border-radius:6px;text-align:left;justify-content:flex-start;font-size:12.5px}.modopt:hover,.modopt.on{background:rgba(255,255,255,.07)}.modopt.on{box-shadow:inset 2px 0 0 var(--acc)}
 .modopt .mk-img,.modbtn .mk-img{flex:none}

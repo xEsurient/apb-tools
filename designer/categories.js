@@ -1,4 +1,4 @@
-import { h, render, seg, toggle, colourPick, colourText, hex2rgb, FONTS, buildFile, saveFile, readFile, store } from './core.js';
+import { h, render, seg, toggle, colourPick, colourText, hex2rgb, FONTS, buildFile, saveFile, readFile, store, copyText } from './core.js';
 import { imagePicker, imageTag, imageByRef, asSel } from './imgpick.js';
 
 const HEADS = { deploy: 'SELECT PRIMARY WEAPON', inventory: 'INVENTORY · WEAPONS', joker: 'JOKER DISTRIBUTION · WEAPONS' };
@@ -13,7 +13,7 @@ const weaponsOf = (D, row) => { const cats = (CAT_OF.find(([re]) => re.test(row)
 const allLists = D => D.catLists || Object.entries(D.shopFilters).map(([id, rows]) => ({ id, group: 'Weapons', label: id, file: 'ShopUIFilters', col: 'Name', weapons: 1, rows }));
 const listOf = (D, id) => allLists(D).find(l => l.id === id) || allLists(D)[0];
 const DEFAULT_ST = { list: 'deploy', key: 'none', yl: 16, font: '', lists: {} };
-const keyOf = (st, L) => ((st.lists[L.id] && st.lists[L.id].key) || (L.file === 'ShopUIFilters' ? st.key : 'none')) === 'number' ? 'number' : 'none';
+const keyOf = (st, L) => st.lists[L.id] && st.lists[L.id].key === 'number' ? 'number' : 'none';
 function listRows(D, st, id) {
   const L = listOf(D, id), base = L.rows, saved = st.lists[L.id] || {};
   const order = saved.order || base.map(r => r.row);
@@ -37,7 +37,7 @@ function catLines(D, st, id) { const R = listRows(D, st, id); return R.rows.map(
 function changed(D, st, id) {
   const s = st.lists && st.lists[id]; if (!s) return false;
   const L = listOf(D, id), base = L.rows.map(r => r.row);
-  if (s.key || (s.order && s.order.some((r, i) => r !== base[i]))) return true;
+  if (s.key === 'number' || (s.order && s.order.some((r, i) => r !== base[i]))) return true;
   return L.rows.some(r => { const it = (s.items || {})[r.row]; return it && (it.icon || it.iconOnly || it.mode !== 'none' || (it.text && it.text !== plain(r.name))); });
 }
 export function categoryFiles(D) {
@@ -53,15 +53,15 @@ export function initCategories(root, D) {
   let selected = null; const baseFiles = {};
   const panel = h('div', { class: 'invpanel' }), editor = h('div', { class: 'card glass' }), out = h('div', { class: 'card glass' }), opts = h('div');
 
-  const draw = () => {
-    const { L, rows, known, items } = rowsOf(st.list);
+  const drawPanel = () => {
+    const { L, rows, known } = rowsOf(st.list);
     if (!selected || !rows.includes(selected)) selected = rows[0];
     panel.innerHTML = '';
     const tabs = h('div', { class: 'invtabs' });
     rows.forEach((r, i) => {
       const k = known.get(r);
       const el = h('div', { class: 'invtab' + (r === selected ? ' on' : ''), draggable: 'true', 'data-row': r, title: r,
-        onclick: () => { selected = r; draw(); },
+        tabindex: '0', onclick: () => { selected = r; draw(); }, onkeydown: e => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selected = r; draw(); } },
         ondragstart: e => { e.dataTransfer.setData('text/plain', r); el.classList.add('drag'); },
         ondragend: () => el.classList.remove('drag'),
         ondragover: e => { e.preventDefault(); el.classList.add('over'); }, ondragleave: () => el.classList.remove('over'),
@@ -77,8 +77,9 @@ export function initCategories(root, D) {
       grid = h('div', { class: 'invgrid' }, ws.length ? ws.map(w => h('div', { class: 'invitem', html: render(w.name) })) : h('div', { class: 'hint' }, /Primary$/.test(selected) ? 'Every primary weapon.' : 'No sample weapons for this category.'));
     } else grid = h('div', { class: 'invgrid' }, h('div', { class: 'hint' }, L.group === 'Marketplace' ? 'Marketplace category names. The same names also show where the game names an item\'s category.' : `${L.group} · ${L.label}`));
     panel.append(h('div', { class: 'invhead' }, HEADS[L.id] || `${L.group} · ${L.label}`.toUpperCase()), h('div', { class: 'invbody' }, tabs, grid));
-    drawOpts(); drawEditor(); drawOut();
   };
+  const refresh = () => { drawPanel(); drawOpts(); drawOut(); };
+  const draw = () => { drawPanel(); drawOpts(); drawEditor(); drawOut(); };
   const move = (row, to) => {
     const { rows } = rowsOf(st.list), from = rows.indexOf(row);
     if (from < 0 || to < 0 || to >= rows.length || from === to) return;
@@ -107,15 +108,15 @@ export function initCategories(root, D) {
     const drawCols = () => {
       cols.innerHTML = '';
       const n = it.mode === 'none' || it.mode === 'rainbow' ? 0 : it.mode === 'solid' ? 1 : it.mode === 'triple' ? 3 : 2;
-      for (let i = 1; i <= n; i++) cols.append(colourPick('ui', it[i], v => { it[i] = v; save(); draw(); }));
+      for (let i = 1; i <= n; i++) cols.append(colourPick('ui', it[i], v => { it[i] = v; save(); refresh(); }));
     };
     drawCols();
     const icon = asSel(it.icon);
     editor.append(...[h('h3', {}, 'Category'), h('div', { class: 'hint' }, h('code', {}, `${L.file}_${selected}_${L.col}`), k.hidden ? ' · not listed by the game by default' : ''),
-      h('div', { class: 'field' }, h('label', {}, 'Name'), h('input', { type: 'text', value: it.text, oninput: e => { it.text = e.target.value; save(); draw(); } })),
+      h('div', { class: 'field' }, h('label', {}, 'Name'), h('input', { type: 'text', value: it.text, oninput: e => { it.text = e.target.value; save(); refresh(); } })),
       h('div', { class: 'field' }, h('label', {}, 'Colour'), seg([['none', 'Game default'], ['solid', 'Solid'], ['smooth', 'Smooth'], ['triple', 'Triple'], ['rainbow', 'Rainbow']], it.mode, v => { it.mode = v; save(); drawCols(); draw(); }), cols),
       h('div', { class: 'field' }, h('label', {}, 'Image (shown before the name)'), h('div', { class: 'row' }, h('button', { onclick: showPicker }, icon ? 'Change image' : 'Choose image'), icon ? h('code', {}, icon.ref) : h('span', { class: 'hint' }, 'none'))), picker,
-      icon ? h('div', { class: 'row' }, toggle('Image only (no name)', !!it.iconOnly, v => { it.iconOnly = v; save(); draw(); }), toggle('Tint the image', !!it.tint, v => { it.tint = v ? '#ffb000' : null; save(); draw(); }), it.tint ? colourPick('ui', it.tint, v => { it.tint = v; save(); draw(); }) : null,
+      icon ? h('div', { class: 'row' }, toggle('Image only (no name)', !!it.iconOnly, v => { it.iconOnly = v; save(); draw(); }), toggle('Tint the image', !!it.tint, v => { it.tint = v ? '#ffb000' : null; save(); draw(); }), it.tint ? colourPick('ui', it.tint, v => { it.tint = v; save(); refresh(); }) : null,
         h('span', { class: 'hint' }, 'Tints multiply the picture (<ImageColour:>), so dark images stay dark.')) : null,
       h('div', { class: 'row' }, L.weapons ? h('button', { title: 'Give every category without an image the kill icon of one of its weapons', onclick: () => autoIcons() }, 'Default icons for empty categories') : null,
         h('button', { onclick: () => { delete st.lists[L.id].items[selected]; save(); draw(); } }, 'Reset this category'),
@@ -135,7 +136,7 @@ export function initCategories(root, D) {
     const { L } = rowsOf(st.list), file = L.file;
     out.innerHTML = '';
     const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt' });
-    fileIn.onchange = async () => { const f = fileIn.files[0]; if (f) { baseFiles[file] = await readFile(f); drawOut(); } };
+    fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFiles[file] = await readFile(f); drawOut(); } catch (e) { msg.textContent = 'Could not read that file: ' + e.message; } };
     const ls = catLines(D, st, L.id), base = baseFiles[file];
     const msg = h('div', { class: 'hint' });
     out.append(...[h('h3', {}, `Output · ${file}`),
@@ -145,14 +146,14 @@ export function initCategories(root, D) {
         const all = categoryFiles(D)[file] || ls;
         const r = buildFile(file, all, base); saveFile(r, base ? base.name : `${file}.GER`);
         msg.textContent = base ? `Saved: ${r.replaced} replaced, ${r.added} added (all ${file} lists you edited).` : `Saved ${r.added} lines (all ${file} lists you edited).`;
-      } }, `Download ${file}`), h('button', { onclick: e => navigator.clipboard.writeText(ls.map(([k, v]) => `${k}=${v}`).join('\r\n')).then(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy this list', 1200); }) }, 'Copy this list')),
+      } }, `Download ${file}`), h('button', { onclick: e => copyText(ls.map(([k, v]) => `${k}=${v}`).join('\r\n')).then(ok => { e.target.textContent = ok ? 'Copied' : 'Copy failed: select the text below'; setTimeout(() => e.target.textContent = 'Copy this list', 1600); }) }, 'Copy this list')),
       h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${v}`).join('\n')), msg].filter(Boolean));
   };
   const drawOpts = () => {
     const { L } = rowsOf(st.list), groups = [];
     for (const l of allLists(D)) { let g = groups.find(x => x[0] === l.group); if (!g) groups.push(g = [l.group, []]); g[1].push(l); }
     const edited = id => changed(D, st, id);
-    const setKey = v => { if (L.file === 'ShopUIFilters' && !st.lists[L.id].key) st.key = v; st.lists[L.id].key = v; save(); draw(); };
+    const setKey = v => { st.lists[L.id].key = v; save(); draw(); };
     opts.replaceChildren(
       h('div', { class: 'field' }, h('label', {}, 'List'), h('select', { onchange: e => { st.list = e.target.value; selected = null; save(); draw(); } },
         groups.map(([g, ls]) => h('optgroup', { label: g }, ls.map(l => h('option', { value: l.id, selected: l.id === L.id }, `${l.label} (${l.rows.length})${edited(l.id) ? ' ✎' : ''}`)))))),

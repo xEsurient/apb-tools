@@ -1,18 +1,31 @@
 const $ = (s) => document.querySelector(s);
 const PAGE = 300;
 const ANIMGROUP = '*animated';
-const store = (k, v) => (v === undefined ? JSON.parse(localStorage.getItem('apbimg.' + k) ?? 'null') : localStorage.setItem('apbimg.' + k, JSON.stringify(v)));
+const store = (k, v) => { try { return v === undefined ? JSON.parse(localStorage.getItem('apbimg.' + k) ?? 'null') : localStorage.setItem('apbimg.' + k, JSON.stringify(v)); } catch { return null; } };
 
-const cat = await (await fetch('data/catalog.json')).json();
-const IMGIDX = fetch('data/img_index.json').then((r) => r.json()), IMGBUF = {}, IMGURL = new Map();
+let cat;
+try { const r = await fetch('data/catalog.json'); if (!r.ok) throw new Error('catalog.json ' + r.status); cat = await r.json(); }
+catch (e) { $('#info').textContent = 'Could not load the image catalogue (' + e.message + '). Reload the page to try again.'; throw e; }
+let IMGIDX = null, NORANGE = false;
+const IMGBUF = {}, IMGURL = new Map();
+async function imgBytes(f, off, len) {
+  if (!NORANGE) {
+    const r = await fetch('data/' + f, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
+    if (r.status === 206) return r.arrayBuffer();
+    if (!r.ok) throw new Error(f + ' ' + r.status);
+    NORANGE = true;
+    if (!IMGBUF[f]) IMGBUF[f] = r.arrayBuffer().catch((e) => { delete IMGBUF[f]; throw e; });
+  }
+  if (!IMGBUF[f]) IMGBUF[f] = fetch('data/' + f).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.arrayBuffer(); }).catch((e) => { delete IMGBUF[f]; throw e; });
+  return (await IMGBUF[f]).slice(off, off + len);
+}
 async function imgUrl(dir, pkg, i) {
   const key = dir + '/' + pkg + '/' + i;
   if (!IMGURL.has(key)) IMGURL.set(key, (async () => {
+    if (!IMGIDX) IMGIDX = fetch('data/img_index.json').then((r) => { if (!r.ok) throw new Error('img_index.json ' + r.status); return r.json(); }).catch((e) => { IMGIDX = null; throw e; });
     const e = (await IMGIDX)[key]; if (!e) return '';
-    const [f, off, len] = e;
-    if (!IMGBUF[f]) IMGBUF[f] = fetch('data/' + f).then((r) => r.arrayBuffer());
-    return URL.createObjectURL(new Blob([(await IMGBUF[f]).slice(off, off + len)], { type: 'image/webp' }));
-  })());
+    return URL.createObjectURL(new Blob([await imgBytes(...e)], { type: 'image/webp' }));
+  })().catch((e) => { IMGURL.delete(key); throw e; }));
   return IMGURL.get(key);
 }
 const A = cat.atlas;
@@ -21,7 +34,8 @@ const ANIM = cat.anim || {};
 const images = [];
 for (const [pkg, rows] of Object.entries(cat.packages))
   rows.forEach((r, i) => images.push({ kind: 'img', pkg, i, path: pkg + '.' + r[0], cls: r[1], w: r[2], h: r[3], has: r[4], from: r[5], anim: ANIM[pkg]?.[i] }));
-const imgAt = (pkg, i) => images.find((x) => x.pkg === pkg && x.i === i);
+const byRef = new Map(images.map((x) => [x.pkg + '|' + x.i, x]));
+const imgAt = (pkg, i) => byRef.get(pkg + '|' + i);
 const hudtex = cat.hudtex.map(([name, src, ref, how]) => ({ kind: 'tex', name, src, img: ref ? imgAt(ref[0], ref[1]) : null, how, group: name.split('_')[0] }));
 const hudicon = cat.hudicon.map(([name, cells, changed]) => ({ kind: 'icon', name, cells, changed }));
 const cells = cat.cells.map(([r, c, names, changed, layers]) => ({ kind: 'cell', name: `r${r} c${c}`, cells: [[r, c]], names, changed, layers: layers || [] }));
@@ -51,6 +65,8 @@ const TABS = {
 
 const st = { tab: 'images', group: null, q: '', shown: PAGE, sel: null, name: null };
 const opt = Object.assign({ anim: false, resize: true, xl: 16, yl: 16, lock: true, target: 'ui', tint: false, colour: '#ffffff', alpha: 1, bg: 'dark' }, store('opt') || {});
+if (!['ui', 'hud'].includes(opt.target)) opt.target = 'ui';
+if (!/^#[0-9a-f]{6}$/i.test(opt.colour)) opt.colour = '#ffffff';
 const save = () => store('opt', opt);
 
 function sprite(cs, size, h = size) {
@@ -68,7 +84,7 @@ function imgEl(x, play) {
   if (!x || !x.has) { const d = document.createElement('div'); d.className = 'noimg'; d.textContent = 'no picture'; return d; }
   const im = new Image(); im.loading = 'lazy'; im.decoding = 'async'; im.alt = x.path;
   play = !!(play && x.anim);
-  imgUrl(play ? 'anim' : 'img', x.pkg, x.i).then((u) => { if (u) im.src = u; });
+  imgUrl(play ? 'anim' : 'img', x.pkg, x.i).then((u) => { if (u) im.src = u; }, () => { im.alt = 'could not load: ' + x.path; im.classList.add('failed'); });
   return im;
 }
 function preview(x, size, play) {
@@ -93,7 +109,7 @@ function lineFor(x) {
   }
   if (ui && opt.tint) {
     const h = opt.colour, c = [1, 3, 5].map((o) => num(parseInt(h.substr(o, 2), 16) / 255));
-    tag = `<ImageColour:R=${c[0]} G=${c[1]} B=${c[2]} A=${num(opt.alpha)}>` + tag;
+    tag = `<ImageColour:R=${c[0]} G=${c[1]} B=${c[2]} A=${num(Math.max(0, Math.min(1, +opt.alpha || 0)))}>` + tag;
   }
   return tag;
 }
@@ -133,6 +149,7 @@ function renderSide() {
   if (na && (!f || 'animated'.includes(f))) {
     const li = document.createElement('li'); li.className = 'animgroup' + (st.group === ANIMGROUP ? ' on' : '');
     li.innerHTML = `<span>▶ Animated</span><small>${na}</small>`;
+    li.tabIndex = 0; li.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.click(); } };
     li.onclick = () => { st.group = ANIMGROUP; st.q = ''; $('#search').value = ''; st.shown = PAGE; render(); };
     ul.append(li);
   }
@@ -140,7 +157,8 @@ function renderSide() {
     if (f && !g.toLowerCase().includes(f)) continue;
     const li = document.createElement('li');
     li.innerHTML = `<span></span><small>${n}</small>`; li.firstChild.textContent = g;
-    li.classList.toggle('on', g === st.group);
+    li.classList.toggle('on', g === st.group); li.tabIndex = 0;
+    li.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.click(); } };
     li.onclick = () => { st.group = g; st.q = ''; $('#search').value = ''; st.shown = PAGE; render(); };
     ul.append(li);
   }
@@ -150,7 +168,7 @@ function renderGrid() {
   $('#info').textContent = T.info + ` — ${l.length} shown` + (st.q ? ' (search covers all groups)' : '') + '.';
   grid.replaceChildren();
   for (const x of l.slice(0, st.shown)) {
-    const c = document.createElement('div'); c.className = 'card' + (x === st.sel ? ' sel' : '');
+    const c = document.createElement('div'); c.className = 'card' + (x === st.sel ? ' sel' : ''); c.tabIndex = 0; c.item = x;
     const pic = document.createElement('div'); pic.className = 'pic bg-' + opt.bg; pic.append(preview(x, 64, opt.anim));
     const nm = document.createElement('div'); nm.className = 'name';
     nm.textContent = x.kind === 'img' ? x.path.slice(x.pkg.length + 1) : x.kind === 'cell' ? (x.names[0] || x.name) : x.name;
@@ -159,12 +177,14 @@ function renderGrid() {
     const badge = animOf(x) ? '▶ animated' : x.kind === 'img' && x.cls.startsWith('Material') ? 'material' : '';
     if (badge) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = badge; c.append(b); }
     c.onclick = () => select(x);
+    c.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(x); } };
     c.ondblclick = async () => { select(x); if (await copy(lineFor(x))) flash('Copied'); };
     grid.append(c);
   }
   $('#more').hidden = l.length <= st.shown;
 }
 function render() { renderSide(); renderGrid(); writeHash(); }
+function markSel() { for (const c of $('#grid').children) c.classList.toggle('sel', c.item === st.sel); }
 
 function showPreview() {
   const x = st.sel; if (!x) return;
@@ -177,7 +197,6 @@ function showPreview() {
 
 function select(x) {
   st.sel = x; st.name = x.kind === 'cell' ? x.names[0] || null : null;
-  document.querySelectorAll('.card.sel').forEach((e) => e.classList.remove('sel'));
   $('#detail').hidden = false;
   st.play = opt.anim; showPreview();
   $('#dname').textContent = x.kind === 'img' ? x.path : x.name;
@@ -207,7 +226,7 @@ function select(x) {
     dl.append(dt, dd);
   }
   $('#targetrow').hidden = x.kind === 'img';
-  renderGrid();
+  markSel();
   update();
 }
 function sizePreview() {
@@ -239,6 +258,7 @@ function update() {
   const ui = x.kind === 'img' || opt.target === 'ui';
   $('#colourrow').hidden = !ui;
   $('#line').value = lineFor(x);
+  $('#copy').disabled = !$('#line').value;
   const notes = [];
   if (x.kind === 'img') notes.push('<Images:> only works in UI text files, not in HUD message files.');
   if (ui && opt.tint) notes.push('ImageColour stays set for the images after it; custom configs reset it with <ImageColour:R=1 G=1 B=1 A=1>. It has no effect on some materials.');
@@ -250,9 +270,11 @@ function update() {
 
 function writeHash() { history.replaceState(null, '', '#' + [st.tab, TABS[st.tab].groups && !st.q ? st.group || '' : ''].map(encodeURIComponent).join('/').replace(/\/$/, '')); }
 function readHash() {
-  const [t, g] = location.hash.slice(1).split('/').map(decodeURIComponent);
+  const dec = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+  const [t, g] = location.hash.slice(1).split('/').map(dec);
   if (TABS[t]) st.tab = t;
-  st.group = g || (st.tab === 'images' ? 'APBMenus_Art_HUDIcons' : st.tab === 'hudtex' ? hudtex[0]?.group : null);
+  const T = TABS[st.tab], known = g === ANIMGROUP || (T.groups && T.list.some((x) => x.group === g));
+  st.group = known ? g : st.tab === 'images' ? 'APBMenus_Art_HUDIcons' : st.tab === 'hudtex' ? hudtex[0]?.group : null;
 }
 
 function setTab(t) {
@@ -265,7 +287,7 @@ document.querySelectorAll('#tabs button').forEach((b) => (b.onclick = () => setT
 let qt; $('#search').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { st.q = e.target.value.trim(); st.shown = PAGE; render(); }, 150); };
 $('#pkgfilter').oninput = renderSide;
 $('#more').onclick = () => { st.shown += PAGE; renderGrid(); };
-$('#close').onclick = () => { $('#detail').hidden = true; st.sel = null; renderGrid(); };
+$('#close').onclick = () => { $('#detail').hidden = true; st.sel = null; markSel(); };
 $('#bg').value = opt.bg;
 $('#bg').onchange = (e) => { opt.bg = e.target.value; save(); renderGrid(); if (st.sel) $('#dprev').className = 'bg-' + opt.bg; };
 $('#animate').checked = opt.anim;

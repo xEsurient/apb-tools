@@ -32,7 +32,8 @@ function withSdd(text, d) {
   return { text: out.join(eol), n };
 }
 async function pick(input, which) {
-  const files = await readInputs(input.files);
+  let files;
+  try { files = await readInputs(input.files); } catch (e) { $(which === 'ref' ? '#refinfo' : '#cusinfo').textContent = 'Could not read that: ' + e.message; return; }
   if (which === 'ref') { REF = files.filter(f => isLoc(f.name)); $('#refinfo').textContent = `${REF.length} reference file(s) loaded.`; }
   else { CUS = files; $('#cusinfo').textContent = `${files.length} file(s) in your config, ${files.filter(f => isLoc(f.name)).length} localisation/ini.`; }
 }
@@ -107,7 +108,7 @@ function detail(i) {
   $('#detail').scrollIntoView({ behavior: 'smooth' });
 }
 function summaryMd() {
-  const { results, unmatched, missing } = RESULT, md = ['# Merge summary', '', `${results.length} file(s) compared, ${RESULT.merged.size} changed.`, '',
+  const { results, unmatched, missing } = RESULT, md = ['# Merge summary', '', `${results.length} file(s) compared, ${RESULT.merged.size - RESULT.addedFiles.length} changed.`, '',
     '| file | reference | added lines | added sections | duplicates | only in yours | changed | same text |', '|---|---|---|---|---|---|---|---|'];
   results.forEach(r => { const c = counts(r.res); md.push(`| ${r.path} | ${r.ref} | ${r.res.added} | ${r.res.sectionsAdded.join(', ')} | ${c['duplicate-in-custom'] || 0} | ${c['only-in-custom'] || 0} | ${c.changed || 0} | ${c['same-text'] || 0} |`); });
   md.push('', '## Lines added per file', '');

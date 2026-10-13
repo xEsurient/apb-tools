@@ -31,7 +31,7 @@
     <section class="glass step"><h2><span class="num">1</span>Reference: the game's lines</h2><div class="pick">
       <label class="drop"><input type="file" id="refdir" webkitdirectory multiple>📁 <span>Choose the game folder <b>APBGame/Localization/INT</b></span></label>
       <label class="drop"><input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt">🗜 <span>…or a <b>zip</b> / single files</span></label>
-      <label class="opt"><span class="switch on" data-cb="useapbdb"></span>Use <a href="https://apbdb.com" target="_blank">APBDB</a> item names when the reference has no <code>InventoryItemTypes</code></label>
+      <label class="opt"><span class="switch on" data-cb="useapbdb"></span>Use <a href="https://apbdb.com" target="_blank" rel="noopener">APBDB</a> item names when the reference has no <code>InventoryItemTypes</code></label>
       <label class="opt"><span class="switch on" data-cb="usesdd"></span>Add the lines the game defines but its INT files leave out (517 lines from the game's design data)</label>
       <span id="refinfo" class="info">No reference chosen: only APBDB item names can be checked.</span></div></section>
     <section class="glass step"><h2><span class="num">2</span>Your config</h2><div class="pick">
@@ -48,9 +48,13 @@
   <div id="detail"></div>
 </main>
 <script>
-document.querySelectorAll('.switch[data-cb]').forEach(sw => sw.closest('label').addEventListener('click', e => {
-  e.preventDefault(); const cb = document.getElementById(sw.dataset.cb); cb.checked = !cb.checked; sw.classList.toggle('on', cb.checked);
-}));
+document.querySelectorAll('.switch[data-cb]').forEach(sw => {
+  const l = sw.closest('label'), cb = document.getElementById(sw.dataset.cb);
+  const flip = () => { cb.checked = !cb.checked; sw.classList.toggle('on', cb.checked); l.setAttribute('aria-checked', String(cb.checked)); };
+  l.setAttribute('role', 'switch'); l.tabIndex = 0; l.setAttribute('aria-checked', String(cb.checked));
+  l.addEventListener('click', e => { if (e.target.closest('a')) return; e.preventDefault(); flip(); });
+  l.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
+});
 </script>
 <script type="module" src="app.js"></script>
 </body></html>

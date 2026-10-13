@@ -6,6 +6,7 @@ Static fan-made tools for APB Reloaded, served with GitHub Pages:
 - **Config merge** (`config/`): keep localisation configs in sync with the game.
 - **Image lookup** (`images/`): find the right image markup for localisation text.
 - **Text designer** (`designer/`): generate stat texts from the game's data, colour tools and a localisation editor.
+- **Stat tables** (`stats/`): sortable weapon and vehicle stats and a modification comparison.
 
 ## Config merge
 
@@ -99,7 +100,8 @@ How the numbers are worked out:
 
 - **Time to kill** is the time from the first to the last shot needed, with every shot (and every shotgun pellet) hitting:
   1000 health, or 1000 stamina for less-than-lethal weapons. Burst weapons wait their burst interval after each
-  burst; weapons with a wind-up add it. Mission stages with no time limit set use the 5:00 default. **Shots to kill past falloff** uses the weapon's minimum damage percentage.
+  burst; weapons with a wind-up add it. **Shots to kill past falloff** uses the weapon's minimum damage percentage.
+- **Mission stage times**: stages with no time limit set use the 5:00 default.
 - **Built-in modifications** (for example the UL-3 'Jersey Devil' Speed Demon Special, +10% fire rate) are applied:
   fire rate, damage, magazine, ammo, reload, equip time and range. Turn this off to see the base weapon.
 - Rocket launchers, grenade launchers and grenades show explosion damage, stamina damage and blast radius.
@@ -157,8 +159,9 @@ lines at once, save with the original encoding).
 
 `stats/` (uses the Text designer's data file). **Tables**: sortable weapon and vehicle stats (TTK, shots to kill,
 damage, rate of fire, magazine, reload, equip, range; vehicle health, speed, cargo, explosion, EMP), with or without
-built-in modifications. Vehicles are grouped by the game's categories (Cars, Trucks, Vans). Sort by clicking a
-column or with the **Sort** control (e.g. lowest or highest TTK, fastest or slowest vehicle).
+built-in modifications (vehicle built-ins such as Steel Plating or Nitro change health and speed too). Vehicles show the
+game's shop category (Cars, Trucks, Vans) in their own column; the filter box matches it. Sort by clicking a
+column (or focusing it and pressing Enter) or with the **Sort** control (e.g. lowest or highest TTK, fastest or slowest vehicle).
 
 **Mod comparison**: pick up to three modifications in slot order (the picker shows each mod's icon, grouped by slot)
 and a scope: all weapons, one category (e.g. Sub-Machine Guns, or Cars / Trucks / Vans) or one weapon; the same for vehicles and vehicle mods.
@@ -166,7 +169,8 @@ The cards can be sorted by name or any stat (the value with all picked mods).
 Every item gets a card with its stats with no mods, with the first mod, the first two and all three, so you see what
 each extra slot adds (e.g. Cooling Jacket 3 → + Reflex Sight 3 → + 3-Point Sling 3); changes are marked green (better)
 or red (worse). A **Combined effects** table lists every effect of the chosen mods per step, including the ones the
-stats cannot show (accuracy, handling, steering…), in the game's own wording; values of the same effect multiply.
+stats cannot show (accuracy, handling, steering…), in the game's own wording: one mod shows the game's own number,
+and when several mods change the same effect the game's number is scaled by the combined change.
 Vehicle cards add health against gunfire and against collisions (armour mods). Max Speed includes nitro's top-speed
 bonus as the game states it (+1 / +2 / +3 m/s) and percentage changes such as Steel Plating; mods apply one after
 another in slot order (e.g. 20 m/s + 3 = 23, then −6% = 21.6).
