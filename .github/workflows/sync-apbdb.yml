@@ -1,0 +1,40 @@
+name: DB Update APBDB
+
+on:
+  schedule:
+    - cron: '0 20 * * 3'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Sync even if the APBDB version has not changed'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apbdb-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pull APBDB data into designer/data.json
+        run: node .github/scripts/sync-apbdb.mjs
+        env:
+          FORCE_SYNC: ${{ inputs.force }}
+      - name: Commit the updated data
+        run: |
+          if git diff --quiet -- designer/data.json; then echo "No data changes."; exit 0; fi
+          git config user.name "Esurient [Gitbot]"
+          git config user.email "138257050+xEsurient@users.noreply.github.com"
+          git add designer/data.json
+          git commit -m "Sync $(node -p "require('./designer/data.json').apbdb.version")"
+          git push
