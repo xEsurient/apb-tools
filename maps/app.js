@@ -124,6 +124,7 @@ async function init() {
   document.querySelectorAll('[data-opt]').forEach(r => r.onclick = () => { const k = r.dataset.opt; S.opt[k] = !S.opt[k]; r.querySelector('.switch').classList.toggle('on', S.opt[k]); if (k === 'textures') V3.applyTextures(); if (k === 'imagery') imagery(); else draw2d(); });
   $('#paneltoggle').onclick = () => $('#panel').classList.toggle('open');
   $('#zin').onclick = () => zoomBy(1.4); $('#zout').onclick = () => zoomBy(1 / 1.4);
+  $('#rleft').onclick = () => rotate2d(3); $('#rright').onclick = () => rotate2d(1); $('#rnorth').onclick = () => rotate2d(-C2.rot); $('#rnorth').style.transform = `rotate(${C2.rot * 90}deg)`;
   $('#btop').onclick = () => V3.top(); $('#bover').onclick = () => V3.overview();
   setupSearch();
   await applyHash();
@@ -211,13 +212,19 @@ function reveal(list) {
   seasonPanel(); applySeason();
 }
 
-const C2 = { cx: 0, cy: 0, sc: 1, W: 0, H: 0 };
+const C2 = { cx: 0, cy: 0, sc: 1, W: 0, H: 0, rot: (+ls.get('apbmap-rot') || 0) & 3 };
+const rotCS = () => [[1, 0], [0, 1], [-1, 0], [0, -1]][C2.rot];
+const w2s = (wx, wy) => { const [c, s] = rotCS(), dx = (wx - C2.cx) * C2.sc, dy = (wy - C2.cy) * C2.sc; return [dx * c - dy * s + C2.W / 2, dx * s + dy * c + C2.H / 2]; };
+const s2w = (mx, my) => { const [c, s] = rotCS(), x = mx - C2.W / 2, y = my - C2.H / 2; return [(x * c + y * s) / C2.sc + C2.cx, (y * c - x * s) / C2.sc + C2.cy]; };
+const panTo = (wx, wy, mx, my) => { C2.cx = 0; C2.cy = 0; const [ax, ay] = s2w(mx, my); C2.cx = wx - ax; C2.cy = wy - ay; };
+function fitBox(x0, y0, x1, y1, m, f) { const w = Math.max(x1 - x0, m), h = Math.max(y1 - y0, m), [a, b] = C2.rot & 1 ? [h, w] : [w, h]; C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / a, C2.H / b) * f; }
+function rotate2d(q) { C2.rot = (C2.rot + q) & 3; ls.set('apbmap-rot', C2.rot ? String(C2.rot) : null); $('#rnorth').style.transform = `rotate(${C2.rot * 90}deg)`; draw2d(); }
 const cv2 = $('#c2d');
 function resize2d() { const dpr = devicePixelRatio; C2.W = innerWidth; C2.H = innerHeight; cv2.width = C2.W * dpr; cv2.height = C2.H * dpr; cv2.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0); }
 function bounds() { return S.index.districts.find(d => d.name === S.name).bounds; }
-function fit2d() { resize2d(); const [x0, y0, x1, y1] = bounds(); C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 1), C2.H / Math.max(y1 - y0, 1)) * 0.86; C2.min = C2.sc / 4; }
-const sxy = i => [(S.d.x[i] - C2.cx) * C2.sc + C2.W / 2, (S.d.y[i] - C2.cy) * C2.sc + C2.H / 2];
-function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const wx = (mx - C2.W / 2) / C2.sc + C2.cx, wy = (my - C2.H / 2) / C2.sc + C2.cy; C2.sc = Math.min(2, Math.max(C2.min || 0, C2.sc * f)); C2.cx = wx - (mx - C2.W / 2) / C2.sc; C2.cy = wy - (my - C2.H / 2) / C2.sc; draw2d(); }
+function fit2d() { resize2d(); fitBox(...bounds(), 1, 0.86); C2.min = C2.sc / 4; }
+const sxy = i => w2s(S.d.x[i], S.d.y[i]);
+function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const [wx, wy] = s2w(mx, my); C2.sc = Math.min(2, Math.max(C2.min || 0, C2.sc * f)); panTo(wx, wy, mx, my); draw2d(); }
 function centerOn(i) { C2.cx = S.d.x[i]; C2.cy = S.d.y[i]; C2.sc = Math.max(C2.sc, 0.06); draw2d(); }
 function visibleMarkers(W, H, tr, pad = 14) {
   const out = [], d = S.d;
@@ -236,7 +243,7 @@ function drawScenery(g, W, H, tr, small) {
 }
 function drawRegions(g, W, H) {
   if (!S.opt.regions || !S.reg.length) return;
-  g.save(); g.translate(W / 2, H / 2); g.scale(C2.sc, C2.sc); g.translate(-C2.cx, -C2.cy);
+  g.save(); g.translate(W / 2, H / 2); g.rotate(C2.rot * Math.PI / 2); g.scale(C2.sc, C2.sc); g.translate(-C2.cx, -C2.cy);
   for (const r of S.reg) { g.fillStyle = r.col; g.globalAlpha = r === S.regHover ? 0.55 : 0.36; g.fill(r.path, 'evenodd'); }
   g.globalAlpha = 1; g.lineJoin = 'round'; g.lineWidth = 2 / C2.sc; g.strokeStyle = 'rgba(10,11,14,.8)'; for (const r of S.reg) g.stroke(r.path);
   g.lineWidth = 1 / C2.sc; g.strokeStyle = 'rgba(255,255,255,.55)'; for (const r of S.reg) g.stroke(r.path);
@@ -244,7 +251,7 @@ function drawRegions(g, W, H) {
   if (!S.opt.labels) return;
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
   for (const r of S.reg) {
-    const x = (r.c[0] - C2.cx) * C2.sc + W / 2, y = (r.c[1] - C2.cy) * C2.sc + H / 2; if (x < -200 || y < -60 || x > W + 200 || y > H + 60) continue;
+    const [x, y] = w2s(r.c[0], r.c[1]); if (x < -200 || y < -60 || x > W + 200 || y > H + 60) continue;
     const main = r.sub || r.group, top = r.sub ? r.group : '', fs = Math.min(22, r.w * C2.sc / Math.max(main.length, top.length * 0.7, 4) * 1.5); if (fs < 8.5) continue;
     g.lineWidth = 3.5; g.strokeStyle = 'rgba(8,9,12,.75)';
     if (top) { g.font = `600 ${Math.round(fs * 0.7)}px Inter,system-ui,sans-serif`; g.fillStyle = 'rgba(233,233,236,.75)'; g.strokeText(top, x, y - fs * 0.75); g.fillText(top, x, y - fs * 0.75); }
@@ -299,12 +306,12 @@ function pick2d(mx, my) {
   return best;
 }
 let drag = null, moved = false;
-cv2.onmousedown = e => { drag = [e.clientX, e.clientY, C2.cx, C2.cy]; moved = false; cv2.classList.add('drag'); };
+cv2.onmousedown = e => { drag = [e.clientX, e.clientY, ...s2w(e.clientX, e.clientY)]; moved = false; cv2.classList.add('drag'); };
 window.addEventListener('mouseup', () => { drag = null; cv2.classList.remove('drag'); });
 cv2.onmousemove = e => {
   const tip = $('#tip');
-  if (drag) { const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; C2.cx = drag[2] - dx / C2.sc; C2.cy = drag[3] - dy / C2.sc; tip.style.display = 'none'; draw2d(); return; }
-  const i = pick2d(e.clientX, e.clientY), reg = S.opt.regions ? regionAt((e.clientX - C2.W / 2) / C2.sc + C2.cx, (e.clientY - C2.H / 2) / C2.sc + C2.cy) : undefined;
+  if (drag) { const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; panTo(drag[2], drag[3], e.clientX, e.clientY); tip.style.display = 'none'; draw2d(); return; }
+  const i = pick2d(e.clientX, e.clientY), reg = S.opt.regions ? regionAt(...s2w(e.clientX, e.clientY)) : undefined;
   if (reg !== S.regHover) { S.regHover = reg; draw2d(); }
   const t = i >= 0 ? title(i) + (isDone(i) ? ' ✓' : '') : reg ? reg.name : ''; if (!t) { tip.style.display = 'none'; return; }
   tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px'; tip.textContent = t;
@@ -316,7 +323,7 @@ cv2.onclick = e => { if (moved) return; const i = pick2d(e.clientX, e.clientY); 
 function deselect() { S.sel = -1; $('#detail').style.display = 'none'; V3.unmark(); draw2d(); setHash(); }
 cv2.ondblclick = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0) { select(i); setMode('3d', i); } };
 let touch = null;
-const touchStart = t => { if (t.length >= 2) { const mx = (t[0].clientX + t[1].clientX) / 2, my = (t[0].clientY + t[1].clientY) / 2; return { d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), sc: C2.sc, wx: (mx - C2.W / 2) / C2.sc + C2.cx, wy: (my - C2.H / 2) / C2.sc + C2.cy }; } return t.length ? { x: t[0].clientX, y: t[0].clientY, cx: C2.cx, cy: C2.cy } : null; };
+const touchStart = t => { if (t.length >= 2) { const mx = (t[0].clientX + t[1].clientX) / 2, my = (t[0].clientY + t[1].clientY) / 2; return { d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), sc: C2.sc, w: s2w(mx, my) }; } return t.length ? { x: t[0].clientX, y: t[0].clientY, w: s2w(t[0].clientX, t[0].clientY) } : null; };
 cv2.addEventListener('touchstart', e => { touch = touchStart(e.touches); }, { passive: true });
 cv2.addEventListener('touchend', e => { touch = touchStart(e.touches); }, { passive: true });
 cv2.addEventListener('touchcancel', () => { touch = null; }, { passive: true });
@@ -325,8 +332,8 @@ cv2.addEventListener('touchmove', e => {
   if (t.length >= 2 && touch.d) {
     const mx = (t[0].clientX + t[1].clientX) / 2, my = (t[0].clientY + t[1].clientY) / 2;
     C2.sc = Math.min(2, Math.max(C2.min || 0, touch.sc * Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) / touch.d));
-    C2.cx = touch.wx - (mx - C2.W / 2) / C2.sc; C2.cy = touch.wy - (my - C2.H / 2) / C2.sc;
-  } else if (t.length === 1 && touch.x !== undefined) { C2.cx = touch.cx - (t[0].clientX - touch.x) / C2.sc; C2.cy = touch.cy - (t[0].clientY - touch.y) / C2.sc; }
+    panTo(...touch.w, mx, my);
+  } else if (t.length === 1 && touch.x !== undefined) panTo(...touch.w, t[0].clientX, t[0].clientY);
   draw2d();
 }, { passive: false });
 
@@ -384,7 +391,7 @@ function showHits(set, label) {
   if (set.size && label) {
     const [x0, y0, x1, y1] = hitBounds();
     if (S.mode === '3d') { V3.cam.position.set((x0 + x1) / 2, (V3.z0 || 0) + Math.max(x1 - x0, y1 - y0, 3000) * 0.8 + 3000, (y0 + y1) / 2 + 2000); V3.yaw = 0; V3.pitch = -1.2; }
-    else { C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 2500), C2.H / Math.max(y1 - y0, 2500)) * 0.8; }
+    else fitBox(x0, y0, x1, y1, 2500, 0.8);
   }
   draw2d(); V3.hitSprites();
 }
@@ -640,9 +647,9 @@ const V3 = {
   },
   cull(unitsPerPx) { for (const g of this.groups) if (g.isInstancedMesh) g.visible = g.userData.r > unitsPerPx * 4; },
   renderTop() {
-    if (!this.ortho) { this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600000); this.ortho.up.set(0, 0, -1); }
+    if (!this.ortho) this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600000);
     const o = this.ortho, hw = C2.W / 2 / C2.sc, hh = C2.H / 2 / C2.sc;
-    o.left = -hw; o.right = hw; o.top = hh; o.bottom = -hh; o.updateProjectionMatrix();
+    o.left = -hw; o.right = hw; o.top = hh; o.bottom = -hh; o.updateProjectionMatrix(); const [rc, rs] = rotCS(); o.up.set(-rs, 0, -rc);
     o.position.set(C2.cx, (this.z0 || 0) + 300000, C2.cy); o.lookAt(C2.cx, this.z0 || 0, C2.cy);
     const fog = this.scene.fog, vis = this.markers.concat(this.msprites || [], this.hsprites || [], [this.marker]).map(s => [s, s.visible]);
     this.scene.fog = null; vis.forEach(([s]) => s.visible = false);
@@ -760,7 +767,7 @@ function fitMission() {
   const pts = missionPoints(); if (!pts.length) return; const d = S.d;
   let x0 = 1e12, y0 = 1e12, x1 = -1e12, y1 = -1e12; for (const [i] of pts) { x0 = Math.min(x0, d.x[i]); x1 = Math.max(x1, d.x[i]); y0 = Math.min(y0, d.y[i]); y1 = Math.max(y1, d.y[i]); }
   if (S.mode === '3d') { V3.cam.position.set((x0 + x1) / 2, (V3.z0 || 0) + Math.max(x1 - x0, y1 - y0) * 0.8 + 4000, (y0 + y1) / 2 + 2000); V3.yaw = 0; V3.pitch = -1.2; return; }
-  C2.cx = (x0 + x1) / 2; C2.cy = (y0 + y1) / 2; C2.sc = Math.min(C2.W / Math.max(x1 - x0, 1000), C2.H / Math.max(y1 - y0, 1000)) * 0.8; draw2d();
+  fitBox(x0, y0, x1, y1, 1000, 0.8); draw2d();
 }
 function refreshMission() { draw2d(); V3.missionSprites(); }
 function drawMission2d(g, tr, W, H) {
@@ -776,6 +783,7 @@ function drawMission2d(g, tr, W, H) {
 $('#mbtn').onclick = () => document.body.classList.contains('mopen') ? document.body.classList.remove('mopen') : openMissions();
 $('#mx').onclick = () => document.body.classList.remove('mopen');
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('row')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if (S.mode !== '2d' || e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; if (e.key === 'r' || e.key === 'R') rotate2d(e.shiftKey ? 3 : 1); });
 document.addEventListener('keydown', e => { if (e.key !== 'Escape' || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; if ($('#detail').style.display === 'block') deselect(); else document.body.classList.remove('mopen'); });
 $('#mq').oninput = () => M.list && drawMissionList();
 document.querySelectorAll('#mfac button').forEach(b => b.onclick = () => { M.filter = b.dataset.f; document.querySelectorAll('#mfac button').forEach(x => x.classList.toggle('on', x === b)); if (M.list) drawMissionList(); });

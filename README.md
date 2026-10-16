@@ -2,7 +2,7 @@
 
 Static fan-made tools for APB Reloaded, served with GitHub Pages:
 
-- **Map viewer** (`maps/`): every district in 2D and 3D.
+- **Map viewer** (`maps/`): every district in 2D and 3D. The 2D map rotates in 90° steps (buttons under the zoom, or R / Shift+R; the arrow points to the original top and resets).
 - **Config merge** (`config/`): keep localisation configs in sync with the game.
 - **Image lookup** (`images/`): find the right image markup for localisation text.
 - **Text designer** (`designer/`): generate stat texts from the game's data, colour tools and a localisation editor.
