@@ -76,14 +76,14 @@ function setupRegions() {
   const list = (S.regions && S.regions[S.name]) || [], groups = [];
   const groupOf = n => { const p = n.split(' - '); if (p.length > 1) return p[0]; return list.map(r => r.name.split(' - ')).filter(p => p.length > 1 && n.startsWith(p[0] + ' ')).map(p => p[0])[0] || n; };
   S.reg = list.filter(r => r.name).map(r => {
-    const g = groupOf(r.name), sub = r.name.startsWith(g + ' - ') ? r.name.slice(g.length + 3) : r.name === g ? '' : r.name.startsWith(g + ' ') ? r.name.slice(g.length + 1) : r.name;
+    const g = r.group ?? groupOf(r.name), sub = r.group !== undefined ? r.sub : r.name.startsWith(g + ' - ') ? r.name.slice(g.length + 3) : r.name === g ? '' : r.name.startsWith(g + ' ') ? r.name.slice(g.length + 1) : r.name;
     let gi = groups.indexOf(g); if (gi < 0) { gi = groups.length; groups.push(g); }
     const path = new Path2D(); let x0 = 1e12, x1 = -1e12;
     for (const l of r.loops) { path.moveTo(l[0], l[1]); for (let k = 2; k < l.length; k += 2) { path.lineTo(l[k], l[k + 1]); x0 = Math.min(x0, l[k]); x1 = Math.max(x1, l[k]); } path.closePath(); }
     return { ...r, group: g, gi, sub, path, w: x1 - x0 };
   });
   const seen = groups.map(() => 0);
-  for (const r of S.reg) { const k = seen[r.gi]++, hue = RGROUP_HUE[r.gi % RGROUP_HUE.length] + (r.gi >= RGROUP_HUE.length ? 12 : 0); r.col = `hsl(${hue} ${62 - (k % 3) * 8}% ${48 + (k % 4) * 6}%)`; }
+  for (const r of S.reg) { const k = seen[r.gi]++, j = groups.length > 1 ? r.gi : k, hue = RGROUP_HUE[j % RGROUP_HUE.length] + (j >= RGROUP_HUE.length ? 12 : 0); r.col = `hsl(${hue} ${62 - (k % 3) * 8}% ${48 + (k % 4) * 6}%)`; }
 }
 function inLoops(loops, x, y) {
   let inside = false;
@@ -101,7 +101,7 @@ function title(i) {
   const d = S.d, inf = info(i), L = S.layerOf[i];
   if (inf.eContact) return d.contactTitles[inf.eContact] || inf.eContact;
   if (inf.eDropOffType) return DROPOFF[inf.eDropOffType] || inf.eDropOffType;
-  if (L >= 0 && LAYERS[L].id === 'beacon' && d.labels[i]) return d.labels[i];
+  if (L >= 0 && LAYERS[L].id === 'beacon' && d.labels[i]) return d.beaconTitles?.[d.labels[i]] || d.labels[i];
   if (L >= 0) return LAYERS[L].one;
   return d.labels[i] || d.classes[d.cls[i]];
 }
