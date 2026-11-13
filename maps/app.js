@@ -44,7 +44,7 @@ const DROPOFF = { DropOff_Enf: 'Enforcer drop-off', DropOff_Crim: 'Criminal drop
   MediumLargeItemDropOff_Crim: 'Medium/large item drop-off (Criminal)', VehicleDropOff_Crim: 'Vehicle drop-off (Criminal)', VehicleDropOff_Enf: 'Vehicle drop-off (Enforcer)' };
 
 const S = { season: false, index: null, meshes: null, d: null, name: '', on: [], layerOn: LAYERS.map(l => l.on), layerOf: null, counts: [], hits: new Set(), sel: -1,
-  mode: '2d', opt: { textures: true, labels: true, imagery: true, regions: false }, icons: {}, regions: null, reg: [], ck: null, ckHide: ls.get('apbmap-ckhide') === '1' };
+  mode: '2d', opt: { textures: true, labels: true, imagery: true, regions: false }, icons: {}, regions: null, reg: [], ck: null, geo: null, ckHide: ls.get('apbmap-ckhide') === '1' };
 
 const CK_KEY = 'apbmap-collected-v1';
 const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
@@ -95,7 +95,7 @@ const regionAt = (x, y) => S.reg.find(r => inLoops(r.loops, x, y));
 function status(t) { $('#dname').textContent = t; }
 function progress(t) { const p = $('#progress'); clearTimeout(fail.t); p.classList.remove('err'); p.style.display = t ? 'block' : 'none'; p.textContent = t || ''; }
 function fail(t) { progress(t); $('#progress').classList.add('err'); fail.t = setTimeout(() => progress(''), 9000); }
-function setHash() { const o = { district: S.name }; if (S.sel >= 0) o.sel = S.sel; if (S.mode === '3d') o.mode = '3d'; history.replaceState(null, '', '#' + new URLSearchParams(o)); }
+function setHash() { if (S.geo) return; const o = { district: S.name }; if (S.sel >= 0) o.sel = S.sel; if (S.mode === '3d') o.mode = '3d'; history.replaceState(null, '', '#' + new URLSearchParams(o)); }
 function info(i) { const s = S.d.info[i]; const o = {}; if (s) s.split(' ').forEach(kv => { const [k, v] = kv.split('='); o[k] = v; }); return o; }
 function title(i) {
   const d = S.d, inf = info(i), L = S.layerOf[i];
@@ -227,7 +227,7 @@ const sxy = i => w2s(S.d.x[i], S.d.y[i]);
 function zoomBy(f, mx = C2.W / 2, my = C2.H / 2) { const [wx, wy] = s2w(mx, my); C2.sc = Math.min(2, Math.max(C2.min || 0, C2.sc * f)); panTo(wx, wy, mx, my); draw2d(); }
 function centerOn(i) { C2.cx = S.d.x[i]; C2.cy = S.d.y[i]; C2.sc = Math.max(C2.sc, 0.06); draw2d(); }
 function visibleMarkers(W, H, tr, pad = 14) {
-  const out = [], d = S.d;
+  const out = [], d = S.d; if (S.geo?.hard) return out;
   for (let i = 0; i < d.x.length; i++) { const L = S.layerOf[i]; if (L < 0 || !S.layerOn[L] || S.hid[i] || (S.ckHide && isDone(i))) continue; const [x, y] = tr(i); if (x > -pad && y > -pad && x < W + pad && y < H + pad) out.push([i, x, y, L]); }
   return out;
 }
@@ -296,6 +296,7 @@ function draw2dNow() {
   S.placed = placed; drawMission2d(g, sxy, W, H);
   for (const i of S.hits) { const [x, y] = sxy(i); g.fillStyle = 'rgba(154,208,255,.25)'; g.strokeStyle = '#9ad0ff'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, 2.5, 0, 7); g.fill(); }
   if (S.sel >= 0) { const [x, y] = sxy(S.sel); g.strokeStyle = '#f2a33a'; g.lineWidth = 2.5; g.shadowColor = '#f2a33a'; g.shadowBlur = 14; g.beginPath(); g.arc(x, y, 18, 0, 7); g.stroke(); g.shadowBlur = 0; }
+  if (S.geo?.draw2d) S.geo.draw2d(g, W, H);
   g.fillStyle = 'rgba(233,233,236,.45)'; g.font = '11px Inter,system-ui,sans-serif'; g.fillText(`1 px ≈ ${(1 / C2.sc / 100).toFixed(1)} m`, 16, H - 16);
 }
 function pick2d(mx, my) {
@@ -311,17 +312,18 @@ window.addEventListener('mouseup', () => { drag = null; cv2.classList.remove('dr
 cv2.onmousemove = e => {
   const tip = $('#tip');
   if (drag) { const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; panTo(drag[2], drag[3], e.clientX, e.clientY); tip.style.display = 'none'; draw2d(); return; }
+  if (S.geo?.hard) { tip.style.display = 'none'; return; }
   const i = pick2d(e.clientX, e.clientY), reg = S.opt.regions ? regionAt(...s2w(e.clientX, e.clientY)) : undefined;
   if (reg !== S.regHover) { S.regHover = reg; draw2d(); }
   const t = i >= 0 ? title(i) + (isDone(i) ? ' ✓' : '') : reg ? reg.name : ''; if (!t) { tip.style.display = 'none'; return; }
   tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px'; tip.textContent = t;
 };
 cv2.onmouseleave = () => { $('#tip').style.display = 'none'; if (S.regHover) { S.regHover = undefined; draw2d(); } };
-cv2.oncontextmenu = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0 && S.ck?.pos.has(i)) { e.preventDefault(); ckToggle(i); } };
+cv2.oncontextmenu = e => { if (S.geo) { e.preventDefault(); return; } const i = pick2d(e.clientX, e.clientY); if (i >= 0 && S.ck?.pos.has(i)) { e.preventDefault(); ckToggle(i); } };
 cv2.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.25 : 0.8, e.clientX, e.clientY); }, { passive: false });
-cv2.onclick = e => { if (moved) return; const i = pick2d(e.clientX, e.clientY); if (i >= 0) select(i); else deselect(); };
+cv2.onclick = e => { if (moved) return; if (S.geo) { S.geo.click?.(...s2w(e.clientX, e.clientY)); return; } const i = pick2d(e.clientX, e.clientY); if (i >= 0) select(i); else deselect(); };
 function deselect() { S.sel = -1; $('#detail').style.display = 'none'; V3.unmark(); draw2d(); setHash(); }
-cv2.ondblclick = e => { const i = pick2d(e.clientX, e.clientY); if (i >= 0) { select(i); setMode('3d', i); } };
+cv2.ondblclick = e => { if (S.geo) return; const i = pick2d(e.clientX, e.clientY); if (i >= 0) { select(i); setMode('3d', i); } };
 let touch = null;
 const touchStart = t => { if (t.length >= 2) { const mx = (t[0].clientX + t[1].clientX) / 2, my = (t[0].clientY + t[1].clientY) / 2; return { d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), sc: C2.sc, w: s2w(mx, my) }; } return t.length ? { x: t[0].clientX, y: t[0].clientY, w: s2w(t[0].clientX, t[0].clientY) } : null; };
 cv2.addEventListener('touchstart', e => { touch = touchStart(e.touches); }, { passive: true });
@@ -338,6 +340,7 @@ cv2.addEventListener('touchmove', e => {
 }, { passive: false });
 
 function select(i) {
+  if (S.geo) return;
   S.sel = i; draw2d(); V3.mark(i);
   const d = S.d, inf = info(i), L = S.layerOf[i], rows = [];
   if (inf.eFaction) rows.push(['Faction', FACTION[inf.eFaction] || inf.eFaction]);
@@ -498,8 +501,16 @@ const V3 = {
       if (!dragging) return; const dx = e.clientX - dragging[0], dy = e.clientY - dragging[1]; if (Math.abs(dx) + Math.abs(dy) > 2) mv = true;
       dragging = [e.clientX, e.clientY]; this.yaw -= dx * 0.004; this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * 0.004));
     });
-    el.addEventListener('click', e => { if (!mv) this.pick(e); });
-    el.addEventListener('wheel', e => { e.preventDefault(); this.speed = Math.max(100, Math.min(50000, this.speed * (e.deltaY < 0 ? 1.25 : 0.8))); this.help(); }, { passive: false });
+    let tl = null;
+    el.addEventListener('touchstart', e => { tl = e.touches.length === 1 ? [e.touches[0].clientX, e.touches[0].clientY] : e.touches.length === 2 ? { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), f: this.cam.fov } : null; }, { passive: true });
+    el.addEventListener('touchmove', e => {
+      e.preventDefault(); const t = e.touches; if (!tl) return;
+      if (t.length === 1 && Array.isArray(tl)) { const dx = t[0].clientX - tl[0], dy = t[0].clientY - tl[1]; tl = [t[0].clientX, t[0].clientY]; this.yaw -= dx * 0.005; this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * 0.005)); this.dirty = true; }
+      else if (t.length === 2 && tl.d && S.geo) { this.zoomFov(tl.f * tl.d / Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)); }
+    }, { passive: false });
+    el.addEventListener('touchend', e => { tl = e.touches.length === 1 ? [e.touches[0].clientX, e.touches[0].clientY] : null; }, { passive: true });
+    el.addEventListener('click', e => { if (!mv && !S.geo) this.pick(e); });
+    el.addEventListener('wheel', e => { e.preventDefault(); if (S.geo) { this.zoomFov(this.cam.fov * (e.deltaY < 0 ? 0.9 : 1.1)); return; } this.speed = Math.max(100, Math.min(50000, this.speed * (e.deltaY < 0 ? 1.25 : 0.8))); this.help(); }, { passive: false });
     window.addEventListener('keydown', e => { if (S.mode === '3d' && !['INPUT', 'SELECT'].includes(document.activeElement.tagName)) { this.keys.add(e.key.toLowerCase()); if (e.key.startsWith('Arrow')) e.preventDefault(); } });
     window.addEventListener('keyup', e => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear()); document.addEventListener('visibilitychange', () => this.keys.clear());
@@ -508,6 +519,7 @@ const V3 = {
     const loop = t => { const dt = Math.min(0.1, (t - last) / 1000); last = t; if (S.mode === '3d') this.frame(dt); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   },
+  zoomFov(f) { this.cam.fov = Math.max(15, Math.min(75, f)); this.cam.updateProjectionMatrix(); this.dirty = true; },
   help() { const h = $('#help'); h.style.display = S.mode === '3d' ? 'block' : 'none'; h.textContent = `WASD / arrows move · Q / E down / up · Shift faster · drag to look · wheel: speed ${Math.round(this.speed)}`; },
   resize() { this.renderer.setSize(innerWidth, innerHeight); this.cam.aspect = innerWidth / innerHeight; this.cam.updateProjectionMatrix(); },
   geometry(id, buf, off) {
@@ -577,7 +589,7 @@ const V3 = {
     [[per, this.layerTex], [done, this.doneTex]].forEach(([lists, tex]) => lists.forEach((list, L) => { if (!list.length) return; const p = this.points(list, LAYERS[L].small ? 120 : 250, tex[L], LAYERS[L].small ? 20 : 30, 10); p.userData.layer = L; this.markers.push(p); }));
     this.applyMarkers();
   },
-  applyMarkers() { for (const p of this.markers) p.visible = S.layerOn[p.userData.layer]; },
+  applyMarkers() { for (const p of this.markers) p.visible = S.layerOn[p.userData.layer] && !S.geo; },
   hitSprites() {
     if (!this.scene) return;
     this.hsprites = this.drop(this.hsprites);
@@ -588,7 +600,7 @@ const V3 = {
   missionSprites() {
     if (!this.scene) return;
     this.msprites = this.drop(this.msprites);
-    if (!this.ready || !M.cur) return;
+    if (!this.ready || !M.cur || S.geo) return;
     this.stageTex = this.stageTex || {}; const per = new Map();
     for (const [i, k] of missionPoints()) { if (!per.has(k)) per.set(k, []); per.get(k).push(i); }
     for (const [k, list] of per) {
@@ -635,15 +647,18 @@ const V3 = {
     const k = this.keys, sp = this.speed * (k.has('shift') ? 4 : 1) * dt;
     const fwd = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)), p = this.cam.position;
-    if (k.has('w') || k.has('arrowup')) p.addScaledVector(fwd, sp); if (k.has('s') || k.has('arrowdown')) p.addScaledVector(fwd, -sp);
-    if (k.has('d') || k.has('arrowright')) p.addScaledVector(right, sp); if (k.has('a') || k.has('arrowleft')) p.addScaledVector(right, -sp);
-    if (k.has('e')) p.y += sp; if (k.has('q')) p.y -= sp;
+    if (S.geo) S.geo.walk?.(k, dt, fwd, right, p);
+    else {
+      if (k.has('w') || k.has('arrowup')) p.addScaledVector(fwd, sp); if (k.has('s') || k.has('arrowdown')) p.addScaledVector(fwd, -sp);
+      if (k.has('d') || k.has('arrowright')) p.addScaledVector(right, sp); if (k.has('a') || k.has('arrowleft')) p.addScaledVector(right, -sp);
+      if (k.has('e')) p.y += sp; if (k.has('q')) p.y -= sp;
+    }
     const h = Math.max(0, p.y - (this.z0 || 0)); this.scene.fog.near = 20000 + h; this.scene.fog.far = 120000 + 2.5 * h;
     const near = Math.max(20, h * 0.02); if (Math.abs(near - this.cam.near) > 1) { this.cam.near = near; this.cam.updateProjectionMatrix(); }
     this.cam.lookAt(p.clone().add(fwd));
-    const sig = [p.x, p.y, p.z, this.yaw, this.pitch].join();
+    const sig = [p.x, p.y, p.z, this.yaw, this.pitch, this.cam.fov].join();
     if (sig === this.sig && !this.dirty) return; this.sig = sig; this.dirty = false;
-    this.cull(h / (innerHeight / 2 / Math.tan(Math.PI / 6))); this.renderer.render(this.scene, this.cam); this.drawMini();
+    this.cull(h / (innerHeight / 2 / Math.tan(Math.PI / 6))); this.renderer.render(this.scene, this.cam); if (!S.geo) this.drawMini();
   },
   cull(unitsPerPx) { for (const g of this.groups) if (g.isInstancedMesh) g.visible = g.userData.r > unitsPerPx * 4; },
   renderTop() {
@@ -771,7 +786,7 @@ function fitMission() {
 }
 function refreshMission() { draw2d(); V3.missionSprites(); }
 function drawMission2d(g, tr, W, H) {
-  if (!M.cur) return;
+  if (!M.cur || S.geo) return;
   g.lineWidth = 3; g.font = '800 10px Inter,system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   for (const [i, k] of missionPoints()) {
     const [x, y] = tr(i); if (x < -12 || y < -12 || x > W + 12 || y > H + 12) continue; const c = STAGE_COLS[k % STAGE_COLS.length];
@@ -784,8 +799,8 @@ $('#mbtn').onclick = () => document.body.classList.contains('mopen') ? document.
 $('#mx').onclick = () => document.body.classList.remove('mopen');
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('row')) { e.preventDefault(); e.target.click(); } });
 document.addEventListener('keydown', e => { if (S.mode !== '2d' || e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; if (e.key === 'r' || e.key === 'R') rotate2d(e.shiftKey ? 3 : 1); });
-document.addEventListener('keydown', e => { if (e.key !== 'Escape' || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; if ($('#detail').style.display === 'block') deselect(); else document.body.classList.remove('mopen'); });
+document.addEventListener('keydown', e => { if (S.geo || e.key !== 'Escape' || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return; if ($('#detail').style.display === 'block') deselect(); else document.body.classList.remove('mopen'); });
 $('#mq').oninput = () => M.list && drawMissionList();
 document.querySelectorAll('#mfac button').forEach(b => b.onclick = () => { M.filter = b.dataset.f; document.querySelectorAll('#mfac button').forEach(x => x.classList.toggle('on', x === b)); if (M.list) drawMissionList(); });
-window.APB = { S, V3, C2 };
-init().catch(e => fail('The map could not load: ' + e.message));
+const ready = init().catch(e => fail('The map could not load: ' + e.message));
+window.APB = { S, V3, C2, w2s, s2w, fitBox, fit2d, draw2d, setMode, loadDistrict, regionAt, bounds, applySeason, seasonPanel, progress, fail, setHash, ready };

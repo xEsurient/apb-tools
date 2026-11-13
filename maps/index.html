@@ -54,6 +54,29 @@
   .stage .sh{display:flex;align-items:center;gap:8px;font-weight:600}.stage .num{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--sc);color:#111;font-size:12px;font-weight:800;flex:none}
   .stage .sh .switch{margin-left:auto}.stage p{margin:6px 0 0;font-size:12.5px;color:#cfd2d8}.stage p b{color:var(--acc);font-weight:600}
   .stage .kv{font-size:12px;color:var(--dim);margin-top:6px}
+
+  body.geo .search,body.geo .chip,body.geo #paneltoggle,body.geo #mbtn,body.geo #modes,body.geo #v3btns,body.geo .nav,body.geo #geobtn,body.geo #panel,body.geo #mini,body.geo #help,body.geo #hitchip,body.geo #detail,body.geo #missions{display:none!important}
+  #geobtn{font-weight:600}
+  #geobar{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:8;display:none;align-items:center;gap:10px;padding:6px 8px 6px 14px;white-space:nowrap;max-width:calc(100vw - 24px)}
+  body.geo #geobar{display:flex}
+  #geobar .gi{display:flex;gap:12px;align-items:center;font-size:13px}#geobar .gi b{color:var(--acc)}#geobar .cap{color:#ffcf7a}#geobar .tm{font-variant-numeric:tabular-nums}#geobar .tm.low{color:var(--bad)}
+  #geocard{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;box-shadow:0 0 0 100vmax rgba(8,9,12,.55),0 10px 30px rgba(0,0,0,.35);width:min(460px,calc(100vw - 24px));max-height:calc(100vh - 40px);overflow:auto;padding:20px 22px;display:none}
+  #geocard h2{margin:0 0 4px;font-size:20px}#geocard h4{margin:16px 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  #geocard .opt{display:flex;align-items:center;gap:10px;padding:6px 2px}#geocard .opt>span:first-child{flex:1}#geocard .opt select,#geocard .opt input[type=text]{min-width:150px}
+  #geocard .types{display:flex;flex-wrap:wrap;gap:6px}#geocard .types label{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border:1px solid var(--line);border-radius:20px;cursor:pointer;font-size:12.5px}#geocard .types input{accent-color:var(--acc)}
+  #geocard .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}#geocard .btns button{flex:1;justify-content:center;min-width:120px}
+  #geocard table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}#geocard td,#geocard th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}#geocard th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  #geocard td.r,#geocard th.r{text-align:right;font-variant-numeric:tabular-nums}#geocard tr.me td{color:var(--acc)}
+  #geocard .big{font-size:30px;font-weight:750;margin:6px 0 2px}#geocard .sq{font-size:18px;letter-spacing:2px}
+  #geocard .tabs{display:flex;margin:12px 0 4px}#geocard .tabs button{flex:1;justify-content:center}
+  #georeveal{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:8;width:min(520px,calc(100vw - 24px));padding:14px 18px;display:none}
+  #georeveal .big{font-size:22px;font-weight:700}#georeveal .row2{display:flex;gap:8px;margin-top:12px}#georeveal .row2 button{flex:1;justify-content:center}
+  #georeveal .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;margin:8px 0}#georeveal .bar i{display:block;height:100%;background:var(--acc)}
+  #georeveal .others{font-size:12.5px;color:var(--dim);margin-top:6px}
+  #geohint{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:7;padding:8px 14px;font-size:12px;color:var(--dim);display:none;white-space:nowrap;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}
+  #geotoast{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:10;padding:8px 14px;display:none}
+  #geoconfirm{position:fixed;inset:0;z-index:11;display:none;background:rgba(0,0,0,.35)}#geoconfirm .glass{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100vw - 24px));padding:18px 20px}
+  @media (max-width:760px){#geobar{top:10px;gap:6px;padding:5px 6px 5px 10px}#geobar .gi{gap:8px;font-size:12px}#geobar .hide-s{display:none}body.geo .brand{display:none}}
   @media (max-width:760px){#missions{left:16px;right:16px;width:auto;top:auto;bottom:16px;max-height:55vh}body.mopen #detail{right:16px}}
   @media (max-width:760px){#panel{top:auto;bottom:16px;left:16px;right:16px;width:auto;max-height:45vh;display:none}#panel.open{display:block}#paneltoggle{display:inline-flex}
     #detail{left:16px;right:16px;width:auto;top:auto;bottom:16px}.search{flex:1 1 100%;order:5}#mini{width:150px;height:150px}
@@ -70,6 +93,7 @@
   <div class="glass chip">District <select id="district" aria-label="District"></select></div>
   <div class="spacer"></div>
   <button class="glass" id="paneltoggle">Layers</button>
+  <button class="glass" id="geobtn">GeoGuesser</button>
   <button class="glass" id="mbtn">Missions</button>
   <div class="glass seg" id="modes"><button data-mode="2d" class="on">2D</button><button data-mode="3d">3D</button></div>
   <div class="glass seg" id="v3btns" style="display:none"><button id="btop">Top</button><button id="bover">Overview</button></div>
@@ -97,5 +121,7 @@
 <div id="zoom" class="glass"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="rleft" aria-label="Rotate left 90°" title="Rotate left (Shift+R)">⟲</button><button id="rright" aria-label="Rotate right 90°" title="Rotate right (R)">⟳</button><button id="rnorth" aria-label="Reset rotation" title="Reset rotation">⬆</button></div>
 <div id="mini" class="glass"><canvas width="440" height="440"></canvas></div>
 <div id="help" class="glass"></div><div id="progress" class="glass"></div><div id="tip" class="glass"></div>
+<div id="geobar" class="glass"></div><div id="geocard" class="glass" role="dialog" aria-modal="true"></div><div id="georeveal" class="glass"></div><div id="geohint" class="glass"></div><div id="geotoast" class="glass"></div><div id="geoconfirm"><div class="glass" role="alertdialog"></div></div>
 <script type="module" src="app.js"></script>
+<script type="module" src="geo.js"></script>
 </body></html>

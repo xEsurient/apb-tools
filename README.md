@@ -3,10 +3,51 @@
 Static fan-made tools for APB Reloaded, served with GitHub Pages:
 
 - **Map viewer** (`maps/`): every district in 2D and 3D. The 2D map rotates in 90° steps (buttons under the zoom, or R / Shift+R; the arrow points to the original top and resets).
+- **GeoGuesser** (in `maps/`): you are dropped at street level somewhere in a district; find the spot on the map.
 - **Config merge** (`config/`): keep localisation configs in sync with the game.
 - **Image lookup** (`images/`): find the right image markup for localisation text.
 - **Text designer** (`designer/`): generate stat texts from the game's data, colour tools and a localisation editor.
 - **Stat tables** (`stats/`): sortable weapon and vehicle stats and a modification comparison.
+
+## GeoGuesser
+
+Press **GeoGuesser** in the map viewer's top bar.
+
+- **Daily challenge**: 5 rounds on two of the six maps, the same spots for everyone on the same day (UTC). Your first result of the
+  day is saved in this browser; replays are not.
+- **Free play**: pick the map (or Mixed: two maps picked at random per game, which keeps the download down; a big
+  district is about 25 MB), 3 / 5 / 10 rounds, a time limit, walking, hard mode and the spot types
+  (streets, alleys, open areas, rooftops, indoors).
+- **A round**: drag to look around, wheel (or pinch) to zoom. With walking on you can move up to 40 m with WASD / the
+  arrow keys (Shift runs) after confirming: every metre walked takes 25 points off that round's 5,000 maximum
+  (4,000 at 40 m), and walking back does not raise it again. Walls stop you and you can't walk off roofs. Walking needs a keyboard. Press **G** (or **Guess on the
+  map**) to open the map, click to drop a pin, **Guess** (or Enter) to confirm; **G** goes back to the street.
+- **Score**: up to 5,000 per round, falling with the distance and scaled to the district's size, so the small maps are
+  as hard as the big ones (on Waterfront: 25 m off ≈ 4,370, 100 m ≈ 2,940, 500 m ≈ 350). Within 3 m you get the maximum.
+  The reveal shows the distance, the area the spot is in and whether your pin landed in the same one.
+- **Hard mode**: no icons, labels or tooltips on the guessing map (the map imagery stays).
+- **Copy result** copies a share line such as
+  `APB GeoGuesser · Daily 2026-11-12 · Waterfront + Crate · 18,420 / 25,000 🟩🟩🟨🟥🟩 <link>`
+  (🟩 4,000+, 🟨 2,000+, 🟧 500+, 🟥 less, ⬛ no guess, 🚶 walked that round, 🔒 hard mode).
+- **Challenge friends / Pass it on**: the link holds the spots, the settings and every player's guesses. A friend opens
+  it, plays the same spots (other players' pins show only after their own guess in each round) and passes the new link
+  on. Two people playing the same link make two links: the page remembers every player it has seen for a challenge,
+  so opening both shows one scoreboard. Each name counts once, with its best game. There is no server: links and browser storage are all there is, and nothing
+  stops anyone from editing a link, so keep it friendly.
+
+**Daily schedule**: the daily spots are listed per date in `maps/data/daily.json`, about a year ahead, so new spot data
+never changes a day that is already scheduled (a date that isn't listed falls back to a pick made from the date). The
+**GeoGuesser daily schedule** workflow (`.github/workflows/geo-daily.yml`, script `.github/scripts/geo-daily.mjs`) runs on
+the 1st of every month and tops the list up to 365 days ahead, committing as *GeoGuesser*; it only adds days, never
+changes existing ones. Run it by hand from the Actions tab: **force** tops up right away, **rebuild_from** (a date after
+today) redoes every day from that date on, e.g. after new spot data. Locally: `node .github/scripts/geo-daily.mjs
+[--force] [--rebuild-from=YYYY-MM-DD]`. GitHub can switch off scheduled workflows in repositories without activity for
+60 days; if that happens, re-enable it in the Actions tab (the list still covers the rest of the year).
+
+The spots (`maps/data/geo.json`) are made automatically from the map data: a top-down height map of every district
+finds flat ground near streets and flat roofs, then each spot is checked by rendering the scene around it (floor under
+the feet, distance to walls in 32 directions, sky above or not). Only directions with a view are used for the start
+facing. A spot list made for older map data is ignored for that district.
 
 ## Config merge
 
