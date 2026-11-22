@@ -1,4 +1,4 @@
-import { decodeText, encodeText, download } from '../config/lib.js';
+import { decodeText, encodeText, fitEnc, download } from '../config/lib.js';
 export { download };
 
 export const $ = (s, r = document) => r.querySelector(s);
@@ -151,7 +151,7 @@ export function buildFile(section, lines, base) {
     const eq = l.indexOf('=');
     if (eq > 0 && !s.startsWith(';') && sec.toLowerCase() === section.toLowerCase()) {
       const k = l.slice(0, eq).trim().toLowerCase(), w = want.get(k);
-      if (w && !done.has(k)) { done.add(k); replaced++; return `${l.slice(0, eq)}=${intValue(w[1])}`; }
+      if (w) { done.add(k); replaced++; return `${l.slice(0, eq)}=${intValue(w[1])}`; }
     }
     return l;
   });
@@ -161,7 +161,8 @@ export function buildFile(section, lines, base) {
     else { let at = secEnd < 0 ? out.length : secEnd; while (at > secStart + 1 && !out[at - 1].trim()) at--; out.splice(at, 0, ...rest); }
   }
   while (out.length && out[out.length - 1] === '') out.pop();
-  return { text: out.join(base.text.includes('\r\n') || !base.text.includes('\n') ? eol : '\n') + eol, enc: base.enc, bom: base.bom, replaced, added: rest.length };
+  const text = out.join(base.text.includes('\r\n') || !base.text.includes('\n') ? eol : '\n') + eol, e = fitEnc(text, base.enc, base.bom, base.orig ?? base.text);
+  return { text, enc: e.enc, bom: e.bom, bad: e.bad, replaced, added: rest.length, orig: base.orig ?? base.text };
 }
 export function saveFile(f, name) { download(new Blob([encodeText(f.text, f.enc, f.bom)], { type: 'text/plain' }), name); }
 

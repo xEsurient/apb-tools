@@ -16,6 +16,7 @@ const VEFF = { 114: 'cargo' };
 
 const vnum = v => String(v || '').split(/\D+/).filter(Boolean).map(Number);
 const newer = (a, b) => { const x = vnum(a), y = vnum(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+const dumpLines = o => '{' + Object.entries(o).map(([k, v]) => JSON.stringify(k) + ':' + (Array.isArray(v) && v.length ? '[\n' + v.map(x => JSON.stringify(x)).join(',\n') + '\n]' : JSON.stringify(v))).join(',\n') + '}\n';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let requests = 0, failures = 0;
 async function get(url, tries = 4) {
@@ -218,7 +219,7 @@ async function main() {
   }
   if (failures > requests * 0.05) throw new Error(`${failures} of ${requests} requests failed; not writing`);
   out.apbdb = { version, synced: new Date().toISOString(), requests, failures, stats };
-  await fs.writeFile(DATA, JSON.stringify(out));
+  await fs.writeFile(DATA, dumpLines(out));
   console.log(`Wrote ${path.relative(ROOT, DATA)} (${requests} requests, ${failures} failed)`);
 }
 

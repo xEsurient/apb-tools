@@ -109,8 +109,9 @@ over the game's own background and street names over the minimap. Pictures come 
 **Game folder** (top of the page): pick your APB game folder (or just `APBGame/Localization`). The page lists the files
 but reads only the localisation files in `APBGame/Localization/INT` and `GER`; nothing is uploaded (the browser may
 still ask to confirm "uploading" the folder: it only means the page may read it). With a folder set, the Generators
-and Presets merge into your GER files automatically (a file without a GER copy starts from the game's full English
-INT file and is saved as GER), and the Editor lists every INT/GER file to open.
+and Presets merge into your GER files automatically (a file without a GER copy becomes a new GER file holding only
+the new lines; the game keeps its English text for the rest. Presets can start from the full English file instead, but
+that freezes every line against later game updates), and the Editor lists every INT/GER file to open.
 
 **Your config** (next to it): pick your config zip (or loose INT/GER files). Its files win over the game folder, the
 same way your GER files win over the game's INT text in game. With a config or folder set, the page previews what you
@@ -194,7 +195,11 @@ the weapon stats and name generators; their preview can be hidden with one switc
 
 Other tabs: **Colours** (converter between HEX/RGB/APB tags with the nearest game colour name, gradient maker, all 208
 game colour names), **Editor** (open any INT/GER file or one from your config, search, edit with an in-game preview, recolour or find/replace many
-lines at once, save with the original encoding).
+lines at once). Bulk tools change only the page you see unless you pick "All matching lines" (asked first); Undo
+reverts the last bulk action but keeps lines you typed since. Find/replace can match case, whole words only, and
+leaves markup tags alone by default. Saving shows every changed line first. The file keeps its encoding: an 8-bit file
+is only saved as UTF-16 when your new text uses characters it cannot hold (such as the ↵ line break), and you are told
+first. English (INT) files are offered as .GER, so your copy overrides the game's file instead of replacing it.
 
 ## Stat tables
 

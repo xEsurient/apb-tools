@@ -144,8 +144,8 @@ export function initCategories(root, D) {
       base ? h('div', { class: 'hint' }, `Merging into ${base.name}`) : null,
       h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => {
         const all = categoryFiles(D)[file] || ls;
-        const r = buildFile(file, all, base); saveFile(r, base ? base.name : `${file}.GER`);
-        msg.textContent = base ? `Saved: ${r.replaced} replaced, ${r.added} added (all ${file} lists you edited).` : `Saved ${r.added} lines (all ${file} lists you edited).`;
+        const r = buildFile(file, all, base), nm = base ? base.name.replace(/\.int$/i, '.GER') : `${file}.GER`; saveFile(r, nm);
+        msg.textContent = (base && nm !== base.name ? `Saved as ${nm} (an .INT name would replace the game's English file; rename it if it is your GER copy). ` : '') + (base ? `Saved: ${r.replaced} replaced, ${r.added} added (all ${file} lists you edited).` : `Saved ${r.added} lines (all ${file} lists you edited).`) + (r.bad && r.bad.length && base && base.enc !== r.enc ? ` Saved as UTF-16: the new lines use characters an 8-bit file cannot hold (${r.bad.slice(0, 8).join(' ')}).` : '');
       } }, `Download ${file}`), h('button', { onclick: e => copyText(ls.map(([k, v]) => `${k}=${v}`).join('\r\n')).then(ok => { e.target.textContent = ok ? 'Copied' : 'Copy failed: select the text below'; setTimeout(() => e.target.textContent = 'Copy this list', 1600); }) }, 'Copy this list')),
       h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${v}`).join('\n')), msg].filter(Boolean));
   };

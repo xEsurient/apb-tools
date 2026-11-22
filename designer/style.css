@@ -60,6 +60,7 @@ select.cpick{max-width:220px}
 .tbl th{cursor:pointer;white-space:nowrap}.tbl th.sorted{color:var(--acc)}.tbl td.nm{white-space:nowrap;font-weight:600}
 .tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
 #edtable{margin-top:12px;overflow:auto}
+.edreview .warn{color:#ffcf66;margin:6px 0}.edchwrap{max-height:340px;overflow:auto}table.edchanges code{white-space:pre-wrap;word-break:break-all;font-size:11.5px}
 table.ed td.k{max-width:280px;word-break:break-all;font-family:ui-monospace,monospace;font-size:11.5px}
 table.ed td:nth-child(2){min-width:340px}table.ed tr.chg td.k div{color:var(--acc)}
 

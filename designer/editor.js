@@ -1,4 +1,5 @@
 import { h, render, readFile, saveFile, colourPick, seg, colourText, hex2rgb, intValue, store, FONTS } from './core.js';
+import { fitEnc } from '../config/lib.js';
 import { LOC, readLoc, onFolder, inGame } from './folder.js';
 
 const HUD = /^(hudmessages|taskobjectives|dailyactivitycontacts|popupdialogs|hudconstantstring|taskoperationuiprofile)$/i;
@@ -21,19 +22,23 @@ const CTX_NAME = { map: 'map labels', hud: 'HUD', tip: 'tooltip', list: 'filter 
 
 export function initEditor(root) {
   let F = null, rows = [], view = [], page = 0, undo = [], GAME = null;
-  const st = store.get('editor', { colour: '#ffb000', hud: 'Yellow', mode: 'solid', 1: '#ffb000', 2: '#ff3d3d', 3: '#7a5cff', steps: 3, font: '' });
+  const st = store.get('editor', { colour: '#ffb000', hud: 'Yellow', mode: 'solid', 1: '#ffb000', 2: '#ff3d3d', 3: '#7a5cff', steps: 3, font: '', scope: 'page', matchCase: false, word: false, textOnly: true });
   const save = () => store.set('editor', st);
   const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt,.ini,.fra,.rus,.pol,.esn,.ita' });
   const q = h('input', { type: 'search', placeholder: 'Search keys and text (use /regex/ for a pattern)…' });
   const secSel = h('select', {}, h('option', { value: '' }, 'All sections'));
   const showGame = h('input', { type: 'checkbox', onchange: () => draw() }), onlyCh = h('input', { type: 'checkbox' }), status = h('span', { class: 'hint' }), table = h('div', { id: 'edtable' }), pager = h('div', { class: 'row' });
+  const qCase = h('input', { type: 'checkbox' });
   const findIn = h('input', { type: 'text', placeholder: 'Find (text or /regex/)' }), repIn = h('input', { type: 'text', placeholder: 'Replace with ($1 for groups)' });
   const kind = () => F && HUD.test(F.name.replace(/\.[^.]+$/, '')) ? 'hud' : 'ui';
-  const tools = h('div', { class: 'card glass', hidden: true });
+  const tools = h('div', { class: 'card glass', hidden: true }), review = h('div', { class: 'card glass edreview', hidden: true }), note = h('div', { class: 'hint' });
+  const dirty = () => F && changed() > 0;
+  const discard = () => !dirty() || confirm(`${F.name} has ${changed()} unsaved change(s). Discard them?`);
+  window.addEventListener('beforeunload', e => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   let loadSeq = 0;
   const load = async src => {
-    F = src; undo = []; const tok = ++loadSeq;
+    F = src; undo = []; const tok = ++loadSeq; review.hidden = true; note.textContent = '';
     const parts = F.text.split(/(\r\n|\n|\r)/), lines = parts.filter((x, k) => k % 2 === 0); let sec = ''; rows = [];
     F.eols = parts.filter((x, k) => k % 2 === 1);
     lines.forEach((l, i) => {
@@ -48,8 +53,15 @@ export function initEditor(root) {
     inGame(stem).then(g => { if (tok !== loadSeq) return; GAME = g.base.size ? g.base : null; if (showGame.checked) draw(); }).catch(() => {});
     tools.hidden = false; drawTools(); filter();
   };
-  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { await load(await readFile(f)); } catch (e) { status.textContent = 'Could not read that file: ' + e.message; } };
-  const dirSel = h('select', { onchange: async () => { const x = LOC.files[+dirSel.value]; if (x) { const r = await readLoc(x); await load({ ...r, name: x.name }); } } });
+  let pickSeq = 0;
+  fileIn.onchange = async () => {
+    const f = fileIn.files[0]; fileIn.value = ''; if (!f || !discard()) return; const tok = ++pickSeq;
+    try { const r = await readFile(f); if (tok === pickSeq) await load(r); } catch (e) { status.textContent = 'Could not read that file: ' + e.message; }
+  };
+  const dirSel = h('select', { onchange: async () => {
+    const x = LOC.files[+dirSel.value]; dirSel.value = ''; if (!x || !discard()) return; const tok = ++pickSeq;
+    try { const r = await readLoc(x); if (tok === pickSeq) await load({ ...r, name: x.name }); } catch (e) { status.textContent = 'Could not read that file: ' + e.message; }
+  } });
   const fillDir = () => {
     dirSel.innerHTML = '';
     const groups = [['zip', 'GER', 'Your config · GER'], ['zip', 'INT', 'Your config · INT'], ['folder', 'GER', 'Game folder · GER (in game)'], ['folder', 'INT', 'Game folder · INT (game default)']];
@@ -59,7 +71,7 @@ export function initEditor(root) {
     dirSel.disabled = !LOC.files.length;
   };
   fillDir(); onFolder(fillDir);
-  const matcher = t => { const m = /^\/(.+)\/([gimsuy]*)$/.exec(t); if (m) { try { return new RegExp(m[1], m[2].replace('g', '') + 'g'); } catch { return null; } } return t ? new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : null; };
+  const matcher = t => { const m = /^\/(.+)\/([gimsuy]*)$/.exec(t); if (m) { try { return new RegExp(m[1], m[2].replace('g', '') + 'g'); } catch { return null; } } return t ? new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), qCase.checked ? 'g' : 'gi') : null; };
   const filter = () => {
     const re = matcher(q.value), sc = secSel.value;
     view = rows.filter(r => (!sc || r.sec === sc) && (!onlyCh.checked || r.val !== r.orig) && (!re || (re.lastIndex = 0, re.test(r.key + '=' + r.val))));
@@ -83,19 +95,44 @@ export function initEditor(root) {
     pager.innerHTML = '';
     const pages = Math.ceil(view.length / PAGE);
     if (pages > 1) pager.append(h('button', { disabled: page === 0, onclick: () => { page--; draw(); } }, '‹ Prev'), h('span', { class: 'hint' }, `Page ${page + 1} of ${pages}`), h('button', { disabled: page >= pages - 1, onclick: () => { page++; draw(); } }, 'Next ›'));
-    status.textContent = summary();
+    status.textContent = summary(); scopeInfo();
   };
-  const summary = () => F ? `${F.name} · preview: ${CTX_NAME[ctxOf(F.name)]} · ${F.enc}${F.fixed ? ' (' + F.fixed + ' broken line ends repaired)' : ''} · ${rows.length} lines · ${view.length} shown · ${changed()} changed · ${kind() === 'hud' ? 'HUD text: use <col:Name>' : 'UI text: <Color:> and <Fonts:> work'}` : '';
+  const summary = () => F ? `${F.name} · preview: ${CTX_NAME[ctxOf(F.name)]} · ${F.enc === 'cp1252' || (F.enc === 'utf-8' && !F.bom && !/[^\x00-\x7f]/.test(F.text)) ? '8-bit' : F.enc}${F.fixed ? ' (' + F.fixed + ' broken line ends repaired)' : ''} · ${rows.length} lines · ${view.length} shown · ${changed()} changed · ${kind() === 'hud' ? 'HUD text: use <col:Name>' : 'UI text: <Color:> and <Fonts:> work'}` : '';
   let last = null;
-  const snapshot = () => { undo.push(rows.map(r => r.val)); if (undo.length > 30) undo.shift(); };
-  const bulk = fn => { snapshot(); view.forEach(r => { r.val = fn(r.val, r); }); draw(); };
+  const record = list => { if (!list.length) return; undo.push(list); if (undo.length > 30) undo.shift(); };
+  const onPage = () => view.slice(page * PAGE, (page + 1) * PAGE);
+  const targets = () => st.scope === 'all' ? view : onPage();
+  const bulk = (fn, label) => {
+    const t = targets(); if (!t.length) { note.textContent = 'No lines to change.'; return; }
+    const off = t.length - onPage().length;
+    if (st.scope === 'all' && off > 0 && !confirm(`${label}: this can change up to ${t.length} lines, ${off} of them not on this page. Continue?`)) return;
+    const done = [];
+    t.forEach(r => { const v = fn(r.val, r); if (v !== r.val) { done.push([r, r.val, v]); r.val = v; } });
+    record(done); const n = done.length;
+    draw(); note.textContent = `${label}: ${n} line${n === 1 ? '' : 's'} changed${st.scope === 'all' ? ' (all matching lines)' : ' (this page)'}.`;
+  };
   const grad = t => colourText(t, { mode: st.mode === 'triple' ? 'smooth' : st.mode, stops: [st[1], st[2]].concat(st.mode === 'triple' ? [st[3]] : []).map(hex2rgb), steps: st.steps, kind: kind(), font: kind() === 'ui' ? st.font : '' });
   const strip = t => t.replace(/<(Color|col|Fonts|\/col)[^<>]*>/gi, '');
+  const stripCol = t => t.replace(/<(Color|col|\/col)[^<>]*>/gi, '');
+  const recolour = v => { const t = st.font && kind() === 'ui' ? strip(v) : stripCol(v); return t.trim() ? grad(t) : v; };
+  const findRe = () => {
+    const t = findIn.value; if (!t) return null;
+    const m = /^\/(.+)\/([gimsuy]*)$/.exec(t);
+    if (m) { try { return { re: new RegExp(m[1], m[2].replace('g', '') + 'g'), regex: true }; } catch { return null; } }
+    let src = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (st.word) src = `(?<![\\p{L}\\p{N}_])${src}(?![\\p{L}\\p{N}_])`;
+    return { re: new RegExp(src, (st.matchCase ? 'g' : 'gi') + 'u'), regex: false };
+  };
+  const replaceIn = (v, f) => {
+    const by = f.regex ? repIn.value : () => repIn.value;
+    if (!st.textOnly) return v.replace(f.re, by);
+    return v.split(/(<[^<>]*>)/).map((p, i) => i % 2 ? p : p.replace(f.re, by)).join('');
+  };
   const wrapSel = () => {
     if (!last || !document.body.contains(last)) return;
     const a = last.selectionStart, b = last.selectionEnd, v = last.value;
     if (a === b) return;
-    last.value = v.slice(0, a) + grad(v.slice(a, b)) + v.slice(b); last.dispatchEvent(new Event('input'));
+    const r = last.row, before = r.val; last.value = v.slice(0, a) + grad(v.slice(a, b)) + v.slice(b); last.dispatchEvent(new Event('input')); record([[r, before, r.val]]);
   };
   const drawTools = () => {
     tools.innerHTML = '';
@@ -109,22 +146,51 @@ export function initEditor(root) {
       if (kind() === 'ui') g.append(h('select', { onchange: e => { st.font = e.target.value; save(); } }, h('option', { value: '' }, 'No font'), FONTS.map(f => h('option', { value: f, selected: st.font === f }, f.split('.').pop().replace(/_/g, ' ')))));
     };
     dg();
-    tools.append(h('h3', {}, 'Bulk tools (apply to the lines shown)'), h('div', { class: 'row' }, g),
-      h('div', { class: 'row' }, h('button', { onclick: () => bulk(v => grad(strip(v))) }, 'Colour shown lines'), h('button', { onclick: wrapSel, title: 'Select text in a line first' }, 'Colour selected text'),
-        h('button', { onclick: () => bulk(strip) }, 'Remove colour/font tags'), h('button', { onclick: () => bulk((v, r) => r.orig) }, 'Revert shown lines'),
-        h('button', { onclick: () => { const u = undo.pop(); if (u) { rows.forEach((r, i) => r.val = u[i]); draw(); } } }, 'Undo')),
-      h('div', { class: 'row' }, findIn, repIn, h('button', { onclick: () => { const re = matcher(findIn.value); if (re) bulk(v => v.replace(re, repIn.value)); } }, 'Replace in shown lines')),
+    const opt = (key, label, title) => h('label', { class: 'opt', title }, h('input', { type: 'checkbox', checked: !!st[key], onchange: e => { st[key] = e.target.checked; save(); } }), label);
+    tools.append(h('h3', {}, 'Bulk tools'),
+      h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Apply to'), seg([['page', 'This page'], ['all', 'All matching lines']], st.scope, v => { st.scope = v; save(); scopeInfo(); }), scopeHint),
+      h('div', { class: 'row' }, g),
+      h('div', { class: 'row' }, h('button', { onclick: () => bulk(recolour, 'Colour lines'), title: 'Replaces the colour tags of each line; font tags stay unless you pick a font' }, 'Colour lines'), h('button', { onclick: wrapSel, title: 'Select text in a line first' }, 'Colour selected text'),
+        h('button', { onclick: () => bulk(strip, 'Remove colour/font tags') }, 'Remove colour/font tags'), h('button', { onclick: () => bulk((v, r) => r.orig, 'Revert') }, 'Revert lines'),
+        h('button', { title: 'Undoes the last bulk action; lines you typed in since then keep your typing', onclick: () => {
+          const u = undo.pop(); if (!u) { note.textContent = 'Nothing to undo.'; return; }
+          let n = 0, kept = 0; u.forEach(([r, before, after]) => { if (r.val === after) { r.val = before; n++; } else kept++; });
+          draw(); note.textContent = `Undone: ${n} line${n === 1 ? '' : 's'}${kept ? `, ${kept} kept because you edited them afterwards` : ''}.`; } }, 'Undo')),
+      h('div', { class: 'row' }, findIn, repIn, h('button', { onclick: () => { const f = findRe(); if (!f) { note.textContent = findIn.value ? 'That pattern is not valid.' : 'Type what to find first.'; return; } bulk(v => replaceIn(v, f), 'Replace'); } }, 'Replace')),
+      h('div', { class: 'row' }, opt('matchCase', 'Match case'), opt('word', 'Whole words only'), opt('textOnly', 'Leave <tags> alone', 'Only replace in the visible text, never inside markup tags such as <Color:…> or <Images:…>')),
+      note,
       h('p', { class: 'hint' }, kind() === 'hud' ? 'This is a HUD text file: colours are turned into the nearest game colour name (<col:Name>…</col>); fonts do not work here.' : 'Colours are written as <Color:R G B> … <Color:/>.'));
   };
+  const isInt = () => F && (F.lang ? F.lang === 'INT' : /\.int$/i.test(F.name));
+  const outName = () => isInt() ? F.name.replace(/\.[^.]+$/, '') + '.GER' : F.name;
   const saveIt = () => {
     if (!F) return;
-    const lines = F.lines.slice(); rows.forEach(r => { if (r.val !== r.orig) lines[r.i] = `${r.key}=${r.quoted ? `"${r.val}"` : intValue(r.val)}`; });
-    saveFile({ text: lines.map((l, i) => l + (F.eols[i] || '')).join(''), enc: F.enc, bom: F.bom }, F.name);
+    const ch = rows.filter(r => r.val !== r.orig);
+    if (!ch.length) { review.hidden = false; review.replaceChildren(h('h3', {}, 'Nothing to save'), h('p', { class: 'hint' }, 'No line differs from the file you opened.')); return; }
+    const lines = F.lines.slice(); ch.forEach(r => { lines[r.i] = `${r.key}=${r.quoted ? `"${r.val}"` : intValue(r.val)}`; });
+    const text = lines.map((l, i) => l + (F.eols[i] || '')).join(''), e = fitEnc(text, F.enc, F.bom, F.text);
+    const name = h('input', { type: 'text', class: 'fname', value: outName() });
+    const warn = [];
+    if (e.bad.length) warn.push(`This is an 8-bit file and the changed lines use characters it cannot hold (${e.bad.slice(0, 12).join(' ')}). It will be saved as UTF-16 instead (the game reads both; the text of the other lines stays the same).`);
+    if (isInt()) warn.push(F.lang ? 'This is an English (INT) file: the game\'s default text. The name ends in .GER so you can put it in the GER folder, where it overrides the INT file without replacing it.' : 'The file name ends in .INT, so it is saved as .GER (put it in the GER folder: it overrides the game\'s English file without replacing it). If this file is already your GER copy, change the name back.');
+    if (F.fixed) warn.push(`${F.fixed} broken line end(s) of the original file are repaired in the saved copy.`);
+    const MAX = 200;
+    const list = h('table', { class: 'grid ed edchanges' }, h('thead', {}, h('tr', {}, h('th', {}, 'Key'), h('th', {}, 'Before'), h('th', {}, 'After'))),
+      h('tbody', {}, ch.slice(0, MAX).map(r => h('tr', {}, h('td', { class: 'k' }, r.key), h('td', {}, h('code', {}, r.orig)), h('td', {}, h('code', {}, r.val))))));
+    review.hidden = false;
+    review.replaceChildren(h('h3', {}, `Save: ${ch.length} changed line${ch.length === 1 ? '' : 's'}`),
+      ...warn.map(w => h('p', { class: 'warn' }, w)),
+      h('div', { class: 'row' }, name, h('button', { class: 'primary', onclick: () => { saveFile({ text, enc: e.enc, bom: e.bom }, name.value.trim() || outName()); review.hidden = true; note.textContent = `Saved ${name.value.trim() || outName()} (${ch.length} changed line${ch.length === 1 ? '' : 's'}).`; } }, 'Download'),
+        h('button', { onclick: () => { review.hidden = true; } }, 'Cancel')),
+      h('p', { class: 'hint' }, `Every other line stays as it was. ${ch.length > MAX ? `First ${MAX} changes:` : 'Changes:'}`), h('div', { class: 'edchwrap' }, list));
+    review.scrollIntoView({ block: 'nearest' });
   };
-  [q, secSel].forEach(e => e.addEventListener('input', filter)); onlyCh.onchange = filter;
+  const scopeHint = h('span', { class: 'hint' });
+  const scopeInfo = () => { scopeHint.textContent = `This page: ${onPage().length} line${onPage().length === 1 ? '' : 's'} · all matching: ${view.length}`; };
+  [q, secSel].forEach(e => e.addEventListener('input', filter)); onlyCh.onchange = filter; qCase.onchange = filter;
   root.append(h('div', { class: 'card glass' }, h('h3', {}, 'Localisation editor'),
-    h('p', { class: 'hint' }, 'Open any APB localisation file (INT, GER, …; UTF-16 and 8-bit files are both read). Edit lines with a live preview, recolour many lines at once, then save: the file keeps its encoding and every line you did not change stays byte-for-byte the same. ↵ is the game\'s line break.'),
-    h('div', { class: 'row' }, h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Open a ', h('b', {}, 'localisation file'))), dirSel, h('button', { class: 'primary', onclick: saveIt }, 'Save file')),
-    h('div', { class: 'row' }, q, secSel, h('label', { class: 'opt' }, onlyCh, 'Changed only'), h('label', { class: 'opt', title: 'Shows the game\'s own line (INT from your game folder or config) under lines you or your config changed' }, showGame, 'Show game default')), status), tools, table, pager);
+    h('p', { class: 'hint' }, 'Open any APB localisation file (INT, GER, …; UTF-16 and 8-bit files are both read). Edit lines with a live preview, recolour many lines at once, then save: you see every changed line before the download, and every line you did not change stays the same. An 8-bit file is only saved as UTF-16 when your new text needs it. ↵ is the game\'s line break.'),
+    h('div', { class: 'row' }, h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Open a ', h('b', {}, 'localisation file'))), dirSel, h('button', { class: 'primary', onclick: saveIt }, 'Save file…')),
+    h('div', { class: 'row' }, q, secSel, h('label', { class: 'opt' }, qCase, 'Match case'), h('label', { class: 'opt' }, onlyCh, 'Changed only'), h('label', { class: 'opt', title: 'Shows the game\'s own line (INT from your game folder or config) under lines you or your config changed' }, showGame, 'Show game default')), status), review, tools, table, pager);
   draw();
 }

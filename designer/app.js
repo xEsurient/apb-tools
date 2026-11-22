@@ -60,10 +60,11 @@ function openGen(g) {
   for (const c of g.controls) ctl.append(control(g, s, c, save));
   ctl.append(h('div', { class: 'row' }, h('button', { onclick: () => { S[g.id] = structuredClone(g.defaults); store.set('gen-' + g.id, S[g.id]); openGen(g); } }, 'Reset settings')));
   const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt,.ini,.fra,.rus,.pol,.esn,.ita' });
-  const fname = h('input', { type: 'text', value: (baseFile[g.id] && baseFile[g.id].name) || `${g.file}.GER`, class: 'fname' });
-  const fromDir = !baseFile[g.id] && findLoc(g.file);
-  const info = h('span', { class: 'hint' }, baseFile[g.id] ? `Merging into ${baseFile[g.id].name}` : fromDir ? `Merging into ${fromDir.path} from your game folder${fromDir.lang === 'INT' ? ' (no GER copy yet: the English file is the base, saved as GER)' : ''}.` : 'No file: download a new file with only these lines.');
-  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFile[g.id] = await readFile(f); } catch (e) { info.textContent = 'Could not read that file: ' + e.message; return; } fname.value = f.name; info.textContent = `Merging into ${f.name} (${baseFile[g.id].enc}${baseFile[g.id].fixed ? ', ' + baseFile[g.id].fixed + ' broken line ends repaired' : ''})`; };
+  const gerName = n => /\.int$/i.test(n) ? n.replace(/\.[^.]+$/, '') + '.GER' : n;
+  const fname = h('input', { type: 'text', value: (baseFile[g.id] && gerName(baseFile[g.id].name)) || `${g.file}.GER`, class: 'fname' });
+  const fromDir = !baseFile[g.id] && findLoc(g.file, ['GER']);
+  const info = h('span', { class: 'hint' }, baseFile[g.id] ? `Merging into ${baseFile[g.id].name}` : fromDir ? `Merging into ${fromDir.path} from your game folder.` : 'No GER file: download a new file with only these lines (the game keeps its English text for every other line).');
+  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFile[g.id] = await readFile(f); } catch (e) { info.textContent = 'Could not read that file: ' + e.message; return; } fname.value = gerName(f.name); info.textContent = `Merging into ${f.name} (${baseFile[g.id].enc}${baseFile[g.id].fixed ? ', ' + baseFile[g.id].fixed + ' broken line ends repaired' : ''})${fname.value !== f.name ? `; saved as ${fname.value} so it overrides the game's English file instead of replacing it (rename it if this is already your GER copy)` : ''}`; };
   box.append(h('div', { class: 'card glass out' }, h('h3', {}, 'Output'),
     h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Optional: your ', h('b', {}, g.file), ' file to merge into (changed lines are replaced, missing ones added)')),
     h('div', { class: 'row' }, fname, h('button', { class: 'primary', onclick: () => out(g, fname.value) }, 'Download'),
@@ -101,12 +102,14 @@ function linesOf(g) { return ITEMS.filter(x => x.value !== undefined).map(x => [
 async function out(g, name) {
   const lines = linesOf(g);
   if (!lines.length) { $('#outinfo').textContent = 'Nothing to write: every line is set to Vanilla.'; return; }
-  const dir = !baseFile[g.id] && findLoc(g.file);
+  const dir = !baseFile[g.id] && findLoc(g.file, ['GER']);
   let file = baseFile[g.id] || (dir ? await readLoc(dir) : null), rep = 0, add = 0;
   const bySec = new Map(); lines.forEach(([k, v, sct]) => { const s = sct || g.file; if (!bySec.has(s)) bySec.set(s, []); bySec.get(s).push([k, v]); });
-  for (const [sct, ls] of bySec) { const r = buildFile(sct, ls, file); file = { name: name, text: r.text, enc: r.enc, bom: r.bom }; rep += r.replaced; add += r.added; }
+  const was = file && file.enc; let bad = [];
+  for (const [sct, ls] of bySec) { const r = buildFile(sct, ls, file); file = { name: name, text: r.text, enc: r.enc, bom: r.bom }; rep += r.replaced; add += r.added; if (r.bad && r.bad.length) bad = r.bad; }
   saveFile(file, name || g.file + '.GER');
-  $('#outinfo').textContent = baseFile[g.id] || dir ? `Saved ${name}: ${rep} lines replaced, ${add} added.` : `Saved ${name}: ${add} lines.`;
+  const conv = bad.length && was !== file.enc ? ` Saved as UTF-16: the new lines use characters an 8-bit file cannot hold (${bad.slice(0, 8).join(' ')}).` : '';
+  $('#outinfo').textContent = (baseFile[g.id] || dir ? `Saved ${name}: ${rep} lines replaced, ${add} added.` : `Saved ${name}: ${add} lines.`) + conv;
 }
 function copyLines(g, btn) {
   const t = linesOf(g).map(([k, v]) => `${k}=${v}`).join('\r\n');

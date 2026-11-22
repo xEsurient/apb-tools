@@ -1,4 +1,4 @@
-import { decodeText, encodeText, readInputs, writeZip, download } from './lib.js';
+import { decodeText, encodeText, fitEnc, readInputs, writeZip, download } from './lib.js';
 import { compare, reportMd, STATUS } from './locmerge.js';
 import { apbdbInventoryItemTypes } from './apbdb.js';
 
@@ -68,7 +68,11 @@ $('#run').onclick = async () => {
       if (r.src === 'apbdb') notes.push('reference built from APBDB item names (DisplayName/CreatorName only)');
       if (r.sdd) notes.push(`${r.sdd} reference line(s) come from the game's design data: keys the game defines but its INT files leave out`);
       results.push({ path: f.name, ref: r.name, res, notes });
-      if (res.merged !== null && (res.added || c.fixed)) merged.set(f.name, encodeText(res.merged, c.enc, c.bom));
+      if (res.merged !== null && (res.added || c.fixed)) {
+        const e = fitEnc(res.merged, c.enc, c.bom, c.text);
+        if (e.bad.length) notes.push(`saved as UTF-16: the added lines use characters an 8-bit file cannot hold (${e.bad.slice(0, 8).join(' ')})`);
+        merged.set(f.name, encodeText(res.merged, e.enc, e.bom));
+      }
     }
     const unmatched = CUS.filter(f => isLoc(f.name) && !refs.has(stem(f.name))).map(f => f.name);
     const missingKeys = [...refs.keys()].filter(s => !CUS.some(f => stem(f.name) === s) && refs.get(s).src === 'game');

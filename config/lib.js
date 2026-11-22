@@ -18,6 +18,15 @@ export function decodeText(bytes) {
   try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), enc: 'utf-8', bom: false, fixed: r.fixed }; }
   catch { return { text: new TextDecoder('windows-1252').decode(bytes), enc: 'cp1252', bom: false, fixed: r.fixed }; }
 }
+const inCp1252 = ch => { const c = ch.charCodeAt(0); return c < 0x80 || (c >= 0xa0 && c < 0x100) || CP1252.includes(ch); };
+export function fitEnc(text, enc, bom, orig) {
+  if (enc === 'utf-8' && !bom && orig !== undefined && !/[^\x00-\x7f]/.test(orig)) enc = 'cp1252';
+  if (enc === 'cp1252') {
+    const bad = [...new Set([...text].filter(ch => !inCp1252(ch)))];
+    if (bad.length) return { enc: 'utf-16le', bom: true, bad, was: 'cp1252' };
+  }
+  return { enc, bom, bad: [], was: enc };
+}
 export function encodeText(text, enc, bom) {
   if (enc === 'utf-16le' || enc === 'utf-16be') {
     const out = new Uint8Array((bom ? 2 : 0) + text.length * 2); let o = 0;
