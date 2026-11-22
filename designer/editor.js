@@ -19,7 +19,9 @@ function ctxView(ctx, key, val) {
   return h('div', { class: 'gamebox small', html });
 }
 const fnv = s => { let x = 0x811c9dc5; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 0x01000193); } return (x >>> 0).toString(36) + '.' + s.length; };
-const SESS = 'apbdesigner-editor-session';
+const SESS = 'apbdesigner-editor-sessions';
+const sessAll = () => { try { const x = JSON.parse(localStorage.getItem(SESS)); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch { return {}; } };
+const sessPut = all => { try { const ks = Object.keys(all).sort((a, b) => all[b].at - all[a].at); for (const k of ks.slice(10)) delete all[k]; if (Object.keys(all).length) localStorage.setItem(SESS, JSON.stringify(all)); else localStorage.removeItem(SESS); } catch { } };
 export function markupIssues(v, kind) {
   const out = [], n = re => (v.match(re) || []).length;
   if (kind === 'hud') {
@@ -44,13 +46,14 @@ export function initEditor(root) {
   const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt,.ini,.fra,.rus,.pol,.esn,.ita' });
   const q = h('input', { type: 'search', placeholder: 'Search keys and text (use /regex/ for a pattern)…' });
   const secSel = h('select', {}, h('option', { value: '' }, 'All sections'));
-  const showGame = h('input', { type: 'checkbox', onchange: () => draw() }), onlyCh = h('input', { type: 'checkbox' }), status = h('span', { class: 'hint' }), table = h('div', { id: 'edtable' }), pager = h('div', { class: 'row' });
+  const showGame = h('input', { type: 'checkbox', onchange: () => updaters.forEach(u => u()) }), onlyCh = h('input', { type: 'checkbox' }), status = h('span', { class: 'hint' }), table = h('div', { id: 'edtable' }), pager = h('div', { class: 'row' });
   const qCase = h('input', { type: 'checkbox' });
   const findIn = h('input', { type: 'text', placeholder: 'Find (text or /regex/)' }), repIn = h('input', { type: 'text', placeholder: 'Replace with ($1 for groups)' });
   const kind = () => F && HUD.test(F.name.replace(/\.[^.]+$/, '')) ? 'hud' : 'ui';
   const tools = h('div', { class: 'card glass', hidden: true }), review = h('div', { class: 'card glass edreview', hidden: true }), note = h('div', { class: 'hint' });
-  const dirty = () => F && changed() > 0;
-  const discard = () => { if (!dirty()) return true; if (!confirm(`${F.name} has ${changed()} unsaved change(s). Discard them?`)) return false; dropSess(); return true; };
+  const unsaved = () => rows.filter(r => r.val !== r.saved).length;
+  const dirty = () => F && unsaved() > 0;
+  const discard = () => { if (!dirty()) return true; if (!confirm(`${F.name} has ${unsaved()} unsaved change(s). Discard them?`)) return false; dropSess(); return true; };
   window.addEventListener('beforeunload', e => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   let loadSeq = 0;
@@ -62,19 +65,19 @@ export function initEditor(root) {
       const s = l.trim();
       if (s.startsWith('[') && s.endsWith(']')) { sec = s.slice(1, -1); return; }
       const eq = l.indexOf('=');
-      if (eq > 0 && !s.startsWith(';')) { let v = l.slice(eq + 1); const quoted = v.length > 1 && v.startsWith('"') && v.endsWith('"'); if (quoted) v = v.slice(1, -1); rows.push({ i, sec, key: l.slice(0, eq), val: v, orig: v, quoted }); }
+      if (eq > 0 && !s.startsWith(';')) { let v = l.slice(eq + 1); const quoted = v.length > 1 && v.startsWith('"') && v.endsWith('"'); if (quoted) v = v.slice(1, -1); rows.push({ i, sec, key: l.slice(0, eq), val: v, orig: v, saved: v, quoted }); }
     });
     F.lines = lines;
     secSel.innerHTML = ''; secSel.append(h('option', { value: '' }, 'All sections'), [...new Set(rows.map(r => r.sec))].map(s => h('option', { value: s }, s)));
-    GAME = null; const stem = F.name.replace(/\.[^.]+$/, '');
-    inGame(stem).then(g => { if (tok !== loadSeq) return; GAME = g.base.size ? g.base : null; if (GAME) draw(); }).catch(() => {});
+    GAME = null; loadGame(tok);
     tools.hidden = false; drawTools(); filter();
     const old = sessFor(F);
     if (old) {
       review.hidden = false;
       review.replaceChildren(h('h3', {}, 'Unsaved edits found'), h('p', { class: 'hint' }, `You had ${old.edits.length} unsaved change${old.edits.length === 1 ? '' : 's'} in this file (${new Date(old.at).toLocaleString()}).`),
-        h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => { const done = []; old.edits.forEach(([k, v]) => { const r = rows[k]; if (r && typeof v === 'string' && r.val !== v) { done.push([r, r.val, v]); r.val = v; } }); record(done); review.hidden = true; draw(); note.textContent = `Restored ${done.length} edit${done.length === 1 ? '' : 's'}.`; } }, 'Restore them'),
-          h('button', { onclick: () => { try { localStorage.removeItem(SESS); } catch { } review.hidden = true; } }, 'Discard them')));
+        h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => { const done = []; old.edits.forEach(([k, v]) => { const r = rows[k]; if (r && typeof v === 'string' && r.val !== v) { done.push([r, r.val, v]); r.val = v; } }); record(done); review.hidden = true; draw(); keep(); note.textContent = `Restored ${done.length} edit${done.length === 1 ? '' : 's'}.`; } }, 'Restore them'),
+          h('button', { onclick: () => { dropSess(); review.hidden = true; } }, 'Discard them')));
+      review.dataset.kind = 'restore';
     }
   };
   let pickSeq = 0;
@@ -94,7 +97,7 @@ export function initEditor(root) {
         return xs.length ? h('optgroup', { label }, xs.map(([x, i]) => h('option', { value: i }, x.name))) : null; }).filter(Boolean));
     dirSel.disabled = !LOC.files.length;
   };
-  fillDir(); onFolder(fillDir);
+  fillDir(); onFolder(() => { fillDir(); GAME = null; updaters.forEach(u => u()); loadGame(); });
   const matcher = t => { const m = /^\/(.+)\/([gimsuy]*)$/.exec(t); if (m) { try { return new RegExp(m[1], m[2].replace('g', '') + 'g'); } catch { return null; } } return t ? new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), qCase.checked ? 'g' : 'gi') : null; };
   const filter = () => {
     const re = matcher(q.value), sc = secSel.value;
@@ -107,14 +110,16 @@ export function initEditor(root) {
     const part = view.slice(page * PAGE, (page + 1) * PAGE);
     const t = h('table', { class: 'grid ed' }, h('thead', {}, h('tr', {}, h('th', {}, 'Key'), h('th', {}, 'Text'), h('th', {}, 'Preview'))));
     const tb = h('tbody');
+    updaters = [];
     part.forEach(r => {
-      const ctx = ctxOf(F && F.name), pv = h('div', { class: 'edprev' }, ctxView(ctx, r.key, r.val));
-      const gv = showGame.checked && GAME && GAME.has(r.key) && GAME.get(r.key) !== r.val ? h('div', { class: 'edgame' }, h('small', { class: 'hint' }, 'Game default'), ctxView(ctx, r.key, GAME.get(r.key))) : null;
+      const ctx = ctxOf(F && F.name), pv = h('div', { class: 'edprev' }, ctxView(ctx, r.key, r.val)), gcell = h('td', {});
+      const gv = () => { const g = showGame.checked ? gameOf(r) : null; return g && g.v !== r.val ? h('div', { class: 'edgame' }, h('small', { class: 'hint' }, 'Game default'), ctxView(ctx, r.key, g.v)) : null; };
       const ta = h('textarea', { rows: Math.min(6, 1 + Math.floor(r.val.length / 70)), oninput: () => { r.val = ta.value.replace(/\r?\n/g, '↵'); pv.replaceChildren(ctxView(ctx, r.key, r.val)); tr.classList.toggle('chg', r.val !== r.orig); flag(); status.textContent = summary(); keep(); }, onfocus: () => { last = ta; ta.before = r.val; }, onchange: () => { if (ta.before !== undefined && ta.before !== r.val) record([[r, ta.before, r.val]]); ta.before = r.val; } }, r.val);
       ta.row = r;
       const marks = h('small', { class: 'edmark' }), flag = () => { const p = problems(r); marks.textContent = p.join(' · '); marks.title = p.join('\n'); };
-      const tr = h('tr', { class: r.val !== r.orig ? 'chg' : '' }, h('td', { class: 'k' }, h('div', {}, r.key), h('small', { class: 'hint' }, r.sec), marks), h('td', {}, ta), h('td', {}, pv, gv));
-      flag();
+      const upd = () => { flag(); const g = gv(); gcell.replaceChildren(pv, ...(g ? [g] : [])); };
+      const tr = h('tr', { class: r.val !== r.orig ? 'chg' : '' }, h('td', { class: 'k' }, h('div', {}, r.key), h('small', { class: 'hint' }, r.sec), marks), h('td', {}, ta), gcell);
+      upd(); updaters.push(upd);
       tb.append(tr);
     });
     t.append(tb); table.append(view.length ? t : h('p', { class: 'hint' }, rows.length ? 'No matching lines.' : 'Open a localisation file to start.'));
@@ -123,17 +128,26 @@ export function initEditor(root) {
     if (pages > 1) pager.append(h('button', { disabled: page === 0, onclick: () => { page--; draw(); } }, '‹ Prev'), h('span', { class: 'hint' }, `Page ${page + 1} of ${pages}`), h('button', { disabled: page >= pages - 1, onclick: () => { page++; draw(); } }, 'Next ›'));
     status.textContent = summary(); scopeInfo();
   };
-  const summary = () => F ? `${F.name} · preview: ${CTX_NAME[ctxOf(F.name)]} · ${F.enc === 'cp1252' || (F.enc === 'utf-8' && !F.bom && !/[^\x00-\x7f]/.test(F.text)) ? '8-bit' : F.enc}${F.fixed ? ' (' + F.fixed + ' broken line ends repaired)' : ''} · ${rows.length} lines · ${view.length} shown · ${changed()} changed · ${kind() === 'hud' ? 'HUD text: use <col:Name>' : 'UI text: <Color:> and <Fonts:> work'}` : '';
+  const summary = () => F ? `${F.name} · preview: ${CTX_NAME[ctxOf(F.name)]} · ${F.enc === 'cp1252' || (F.enc === 'utf-8' && !F.bom && !/[^\x00-\x7f]/.test(F.text)) ? '8-bit' : F.enc}${F.fixed ? ' (' + F.fixed + ' broken line ends repaired)' : ''} · ${rows.length} lines · ${view.length} shown · ${changed()} changed${F && unsaved() ? `, ${unsaved()} not saved yet` : ''} · ${kind() === 'hud' ? 'HUD text: use <col:Name>' : 'UI text: <Color:> and <Fonts:> work'}` : '';
   let last = null;
-  const unknown = r => !!(GAME && !GAME.has(r.key.trim()));
+  const gameOf = r => GAME ? GAME.lookup(r.key, r.sec) : null;
+  const unknown = r => !!(GAME && !gameOf(r));
+  let updaters = [];
+  const loadGame = tok => {
+    if (!F) return; const stem = F.name.replace(/\.[^.]+$/, ''), t = tok ?? loadSeq;
+    inGame(stem).then(g => { if (t !== loadSeq) return; GAME = g.base.size ? g.base : null; updaters.forEach(u => u()); }).catch(() => {});
+  };
   const problems = r => { const p = []; if (unknown(r)) p.push('key not in the game\'s English file: the game ignores this line'); if (r.val !== r.orig) p.push(...markupIssues(r.val, kind())); return p; };
   let keepT = 0;
-  const keep = () => { clearTimeout(keepT); keepT = setTimeout(() => {
-    try { if (!F) return; const edits = rows.map((r, k) => r.val !== r.orig ? [k, r.val] : null).filter(Boolean);
-      if (edits.length) localStorage.setItem(SESS, JSON.stringify({ name: F.name, sig: F.sig, at: Date.now(), edits })); else if (sessFor(F)) localStorage.removeItem(SESS); } catch { }
+  const sid = f => f.name + '|' + f.sig;
+  const keep = () => { if (!review.hidden && review.dataset.kind === 'save') { review.hidden = true; note.textContent = 'Changed after opening the save review: press Save file again to see the current changes.'; }
+    clearTimeout(keepT); keepT = setTimeout(() => {
+    if (!F) return; const all = sessAll(), edits = rows.map((r, k) => r.val !== r.orig ? [k, r.val] : null).filter(Boolean);
+    if (edits.length && unsaved()) all[sid(F)] = { name: F.name, sig: F.sig, at: Date.now(), edits }; else delete all[sid(F)];
+    sessPut(all);
   }, 300); };
-  const sessFor = f => { try { const x = JSON.parse(localStorage.getItem(SESS)); return x && x.name === f.name && x.sig === f.sig && Array.isArray(x.edits) && x.edits.length ? x : null; } catch { return null; } };
-  const dropSess = () => { try { if (F && sessFor(F)) localStorage.removeItem(SESS); } catch { } };
+  const sessFor = f => { const x = sessAll()[sid(f)]; return x && Array.isArray(x.edits) && x.edits.length ? x : null; };
+  const dropSess = () => { if (!F) return; const all = sessAll(); delete all[sid(F)]; sessPut(all); };
   const record = list => { if (!list.length) return; undo.push(list); if (undo.length > 30) undo.shift(); };
   const onPage = () => view.slice(page * PAGE, (page + 1) * PAGE);
   const targets = () => st.scope === 'all' ? view : onPage();
@@ -202,13 +216,15 @@ export function initEditor(root) {
   const saveIt = () => {
     if (!F) return;
     const ch = rows.filter(r => r.val !== r.orig);
+    review.dataset.kind = 'save';
     if (!ch.length) { review.hidden = false; review.replaceChildren(h('h3', {}, 'Nothing to save'), h('p', { class: 'hint' }, 'No line differs from the file you opened.')); return; }
     const lineOf = r => `${r.key}=${r.quoted ? `"${r.val}"` : intValue(r.val)}`;
     const lines = F.lines.slice(); ch.forEach(r => { lines[r.i] = lineOf(r); });
     const full = lines.map((l, i) => l + (F.eols[i] || '')).join('');
     const small = () => { const out = [';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;', '; Changed lines only, saved with the APB Reloaded text designer', ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;']; let sec = null;
       ch.forEach(r => { if (r.sec !== sec) { sec = r.sec; out.push('', `[${sec}]`); } out.push(lineOf(r)); }); return out.join('\r\n') + '\r\n'; };
-    const onlyCh2 = h('input', { type: 'checkbox' });
+    const smallWarn = h('p', { class: 'warn', hidden: true }, 'You opened your own GER file: the small file holds only the lines changed here. Using it in place of this file drops your other custom lines, so give it to someone as a patch or use the full file.');
+    const onlyCh2 = h('input', { type: 'checkbox', onchange: () => { smallWarn.hidden = !onlyCh2.checked || isInt(); } });
     const pick = () => onlyCh2.checked ? { text: small(), enc: 'utf-16le', bom: true, bad: [] } : { text: full, ...fitEnc(full, F.enc, F.bom, F.text) };
     let e = pick();
     const name = h('input', { type: 'text', class: 'fname', value: outName() });
@@ -218,6 +234,7 @@ export function initEditor(root) {
     if (bad.length) warn.push(`${bad.length} changed line${bad.length === 1 ? ' has' : 's have'} markup problems: ${bad.slice(0, 4).map(([r, p]) => `${r.key} (${p.join('; ')})`).join(', ')}${bad.length > 4 ? ' …' : ''}`);
     if (e.bad.length) warn.push(`This is an 8-bit file and the changed lines use characters it cannot hold (${e.bad.slice(0, 12).join(' ')}). It will be saved as UTF-16 instead (the game reads both; the text of the other lines stays the same).`);
     if (isInt()) warn.push(F.lang ? 'This is an English (INT) file: the game\'s default text. The name ends in .GER so you can put it in the GER folder, where it overrides the INT file without replacing it.' : 'The file name ends in .INT, so it is saved as .GER (put it in the GER folder: it overrides the game\'s English file without replacing it). If this file is already your GER copy, change the name back.');
+    if (F.oddByte) warn.push('The original file ended with a stray half character (odd byte count in UTF-16): it is left out of the saved copy.');
     if (F.fixed) warn.push(`${F.fixed} broken line end(s) of the original file are repaired in the saved copy.`);
     const MAX = 200;
     const list = h('table', { class: 'grid ed edchanges' }, h('thead', {}, h('tr', {}, h('th', {}, 'Key'), h('th', {}, 'Before'), h('th', {}, 'After'))),
@@ -225,8 +242,8 @@ export function initEditor(root) {
     review.hidden = false;
     review.replaceChildren(h('h3', {}, `Save: ${ch.length} changed line${ch.length === 1 ? '' : 's'}`),
       ...warn.map(w => h('p', { class: 'warn' }, w)),
-      h('label', { class: 'opt', title: 'A small GER file with just your changed lines: every other line keeps following the game\'s English text, also after game updates' }, onlyCh2, 'Only the changed lines (new small file)'),
-      h('div', { class: 'row' }, name, h('button', { class: 'primary', onclick: () => { e = pick(); saveFile({ text: e.text, enc: e.enc, bom: e.bom }, name.value.trim() || outName()); dropSess(); review.hidden = true; note.textContent = `Saved ${name.value.trim() || outName()} (${ch.length} changed line${ch.length === 1 ? '' : 's'}${onlyCh2.checked ? ', changed lines only' : ''}).`; } }, 'Download'),
+      h('label', { class: 'opt', title: 'A small GER file with just your changed lines: every other line keeps following the game\'s English text, also after game updates' }, onlyCh2, 'Only the changed lines (new small file)'), smallWarn,
+      h('div', { class: 'row' }, name, h('button', { class: 'primary', onclick: () => { e = pick(); saveFile({ text: e.text, enc: e.enc, bom: e.bom }, name.value.trim() || outName()); rows.forEach(r => { r.saved = r.val; }); dropSess(); review.hidden = true; status.textContent = summary(); note.textContent = `Saved ${name.value.trim() || outName()} (${ch.length} changed line${ch.length === 1 ? '' : 's'}${onlyCh2.checked ? ', changed lines only' : ''}).`; } }, 'Download'),
         h('button', { onclick: () => { review.hidden = true; } }, 'Cancel')),
       h('p', { class: 'hint' }, `Every other line stays as it was. ${ch.length > MAX ? `First ${MAX} changes:` : 'Changes:'}`), h('div', { class: 'edchwrap' }, list));
     review.scrollIntoView({ block: 'nearest' });

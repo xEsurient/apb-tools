@@ -297,8 +297,8 @@ export async function initPresets(root, D) {
     const out = h('div', { class: 'card glass' }, h('h3', {}, 'Download'),
       h('label', { class: 'drop' }, userIn, '🗜 ', h('span', {}, userFiles ? `${userFiles.length} files from your config: changed files are merged into them` : h('span', {}, 'Optional: your config ', h('b', {}, 'zip'), ' to merge into'))),
       LOC.files.length ? h('div', { class: 'hint' }, `Game folder set: files are merged into its GER files${userFiles ? ' (the zip wins where both have a file)' : ''}.`) : h('div', { class: 'hint' }, 'Or set your game folder at the top of the page: its GER files are used as the base.'),
-      LOC.files.length ? toggle('Files without a GER copy start from the game\'s full English (INT) file (copies every line: later game updates to those lines will not show)', st.fromInt, v => { st.fromInt = v; save(); }) : null,
-      h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Extension'), seg([['GER', '.GER'], ['INT', '.INT']], st.ext, v => { st.ext = v; save(); }),
+      LOC.files.length ? toggle('Files without a GER copy start from the game\'s full English (INT) file (copies every line: later game updates to those lines will not show)', st.fromInt, v => { st.fromInt = v; save(); body.querySelectorAll('.edreview').forEach(e => e.remove()); }) : null,
+      h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Extension'), seg([['GER', '.GER'], ['INT', '.INT']], st.ext, v => { st.ext = v; save(); body.querySelectorAll('.edreview').forEach(e => e.remove()); }),
         h('button', { class: 'primary', onclick: async () => {
           const files = build(), zip = [], report = [], rv = [];
           for (const [f, ls] of Object.entries(files)) {
@@ -310,9 +310,9 @@ export async function initPresets(root, D) {
             const bySec = new Map(); ls.forEach(([k, v, s]) => { const sc = s || f; if (!bySec.has(sc)) bySec.set(sc, []); bySec.get(sc).push([k, v]); });
             let cur = base, r;
             for (const [sc, l] of bySec) { r = buildFile(sc, l, cur); cur = { text: r.text, enc: r.enc, bom: r.bom }; }
-            const path = mine ? mine.name : dir && dir.lang === 'GER' ? dir.path : `APBGame/Localization/GER/${f}.${st.ext}`;
+            const path = mine ? mine.name : dir && dir.lang === 'GER' ? (dir.path.includes('/') ? dir.path : `APBGame/Localization/GER/${dir.path}`) : `APBGame/Localization/GER/${f}.${st.ext}`;
             zip.push({ name: path, data: encodeText(cur.text, cur.enc || 'utf-16le', cur.bom !== false) }); const conv = base && cur.enc === 'utf-16le' && base.enc !== 'utf-16le' ? 'saved as UTF-16: the 8-bit file could not hold the new characters' : '';
-            report.push(`${f}: ${ls.length} lines${conv ? ` (${conv})` : ''}`); rv.push({ name: path, base: base && base.text, lines: ls.map(([k, v]) => [k, v]), conv });
+            report.push(`${f}: ${ls.length} lines${conv ? ` (${conv})` : ''}`); rv.push({ name: path, base: base && base.text, lines: ls.map(([k, v, sc]) => [k, v, sc || f]), conv });
           }
           if (!zip.length) { msg.textContent = 'Nothing to write: every choice is the game default.'; return; }
           const blob = await writeZip(zip);

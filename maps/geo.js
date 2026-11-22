@@ -21,12 +21,17 @@ const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/'))
 const square = p => p == null ? '⬛' : p >= 4000 ? '🟩' : p >= 2000 ? '🟨' : p >= 500 ? '🟧' : '🟥';
 const fp = e => `${e.placements}|${e.bounds.map(Math.round).join('|')}`;
 const diag = n => { const b = S.index.districts.find(d => d.name === n).bounds; return Math.hypot(b[2] - b[0], b[3] - b[1]); };
+const RCAP = 2500;
 const capOf = moved => moved > 0 ? Math.max(MAXP - 1000, Math.round(MAXP - 25 * moved / 100)) : MAXP;
 const away = (sp, g) => Math.hypot(g[0] - sp.x, g[1] - sp.y);
 const points = (sp, g, cap) => { if (!g) return 0; const d = away(sp, g); return Math.min(cap, d <= 300 ? MAXP : Math.round(MAXP * Math.exp(-10 * d / diag(sp.d)))); };
 const baseUrl = () => location.href.split('#')[0];
 
-let GEO = null, T = null, prev = null, timer = 0, toastT = 0, askCancel = null;
+let GEO = null, T = null, prev = null, timer = 0, toastT = 0, askCancel = null, starting = false;
+const spotHash = spots => fnv(spots.map(p => [DLIST.indexOf(p.d), Math.round(p.x / 10), Math.round(p.y / 10)].join(',')).join(';')).toString(36);
+const bnd = n => { const e = S.index && S.index.districts.find(d => d.name === n); return e ? e.bounds : null; };
+const inside = (n, x, y, m) => { const b = bnd(n); return !b || (x >= b[0] - m && x <= b[2] + m && y >= b[1] - m && y <= b[3] + m); };
+const clampTo = (n, x, y, m) => { const b = bnd(n); return b ? [Math.min(b[2] + m, Math.max(b[0] - m, x)), Math.min(b[3] + m, Math.max(b[1] - m, y))] : [x, y]; };
 const firstHash = location.hash;
 
 async function geoData() {
@@ -85,20 +90,40 @@ function checkChallenge(o) {
   const st = o.st || {}, r = st.r;
   if (!int(r, 1, 10) || !Array.isArray(o.sp) || o.sp.length !== r) throw new Error('broken challenge');
   const s = { d: int(st.d, 0, DLIST.length - 1) ? DLIST[st.d] : 'all', r, m: st.m ? 1 : 0, h: st.h ? 1 : 0, t: int(st.t, 0, 600) ? st.t : 0, ty: Array.isArray(st.ty) ? st.ty.filter(t => Object.hasOwn(TNAME, t)) : DEF.ty };
-  const spots = o.sp.map(a => { if (!Array.isArray(a) || !int(a[0], 0, DLIST.length - 1) || !a.slice(1, 5).every(Number.isFinite)) throw new Error('broken challenge'); return { d: DLIST[a[0]], x: a[1] * 10, y: a[2] * 10, z: a[3] * 10, yaw: a[4] / 1000 }; });
+  const spots = o.sp.map(a => {
+    if (!Array.isArray(a) || a.length < 5 || !int(a[0], 0, DLIST.length - 1) || !a.slice(1, 5).every(Number.isFinite)) throw new Error('broken challenge');
+    const sp = { d: DLIST[a[0]], x: a[1] * 10, y: a[2] * 10, z: a[3] * 10, yaw: a[4] / 1000 };
+    if (!inside(sp.d, sp.x, sp.y, 20000) || Math.abs(sp.z) > 1e7 || Math.abs(sp.yaw) > 100) throw new Error('broken challenge');
+    return sp;
+  });
+  const guess = (g, k) => {
+    if (!Array.isArray(g) || g.length < 3 || !g.slice(0, 3).every(Number.isFinite)) return 0;
+    const [x, y] = clampTo(spots[k].d, Math.round(g[0]) * 10, Math.round(g[1]) * 10, 20000);
+    return [Math.round(x / 10), Math.round(y / 10), Math.max(MAXP - 1000, Math.min(MAXP, Math.round(g[2]))), Number.isFinite(g[3]) ? Math.max(0, Math.min(3600, Math.round(g[3]))) : 0];
+  };
   const players = (Array.isArray(o.p) ? o.p : []).slice(0, 60).filter(p => Array.isArray(p) && typeof p[0] === 'string' && Array.isArray(p[1]) && p[1].length === r)
-    .map(p => [p[0].slice(0, 16), p[1].map(g => Array.isArray(g) && g.slice(0, 3).every(Number.isFinite) ? [Math.round(g[0]), Math.round(g[1]), Math.max(MAXP - 1000, Math.min(MAXP, Math.round(g[2]))), Number.isFinite(g[3]) ? Math.round(g[3]) : 0] : 0)]);
+    .map(p => [p[0].slice(0, 16), p[1].map(guess)]);
   return { id: o.id, st: s, spots, players };
 }
 function challengeObj(id, st, spots, players) {
   return { v: 1, id, st: { d: st.d === 'all' ? 'all' : DLIST.indexOf(st.d), r: st.r, m: st.m, h: st.h, t: st.t, ty: st.ty },
     sp: spots.map(p => [DLIST.indexOf(p.d), Math.round(p.x / 10), Math.round(p.y / 10), Math.round(p.z / 10), Math.round(p.yaw * 1000)]), p: players };
 }
-function mergePlayers(id, list) {
+const PMAX = 60;
+function capPlayers(spots, list, me) {
+  if (list.length <= PMAX) return list;
+  const keep = bestPerName(spots, list).map(([p]) => p);
+  if (me && !keep.includes(me)) keep.unshift(me);
+  const out = keep.slice(0, PMAX);
+  if (me && !out.includes(me)) out[PMAX - 1] = me;
+  return out;
+}
+function mergePlayers(id, list, spots, me) {
   let all = [];
   upd(o => {
     o.ch = o.ch || {}; const c = o.ch[id] || { p: [] }, seen = new Set(c.p.map(p => JSON.stringify(p)));
     for (const p of list) { const k = JSON.stringify(p); if (!seen.has(k)) { seen.add(k); c.p.push(p); } }
+    if (spots) { const mk = me ? JSON.stringify(me) : null; c.p = capPlayers(spots, c.p, mk ? c.p.find(p => JSON.stringify(p) === mk) : null); }
     c.ts = Date.now(); o.ch[id] = c; all = c.p;
     const ids = Object.keys(o.ch).sort((a, b) => o.ch[b].ts - o.ch[a].ts); for (const k of ids.slice(30)) delete o.ch[k];
   });
@@ -108,7 +133,7 @@ const bestPerName = (spots, list) => { const m = new Map(); for (const p of list
 const playerTotal = (spots, p) => p[1].reduce((a, g, k) => a + (g ? points(spots[k], [g[0] * 10, g[1] * 10], g[2]) : 0), 0);
 
 function toast(t) { const el = $('#geotoast'); el.textContent = t; el.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = 'none', 2600); }
-function hint(t) { const el = $('#geohint'); el.style.display = t ? 'block' : 'none'; el.textContent = t || ''; }
+function hint(t) { const el = $('#geohint'), rv = $('#georeveal'); el.style.display = t ? 'block' : 'none'; el.textContent = t || ''; el.style.bottom = t && rv.style.display === 'block' ? `${rv.offsetHeight + 26}px` : ''; }
 function ask(html, yes, no) {
   closeAsk();
   return new Promise(res => {
@@ -126,6 +151,7 @@ async function copy(text, btn) {
 }
 const closeAsk = () => { if (askCancel) askCancel(); };
 function card(html) { const c = $('#geocard'); c.innerHTML = html; c.style.display = html ? 'block' : 'none'; c.scrollTop = 0; }
+function oops(t) { card(`<h2>GeoGuesser</h2><p>${esc(t)}</p><div class="btns"><button id="gcancel">Close</button></div>`); $('#gcancel').onclick = () => { card(''); if (/^#geo=/.test(location.hash)) A.setHash(); }; }
 
 const hooks = {
   hard: false,
@@ -182,7 +208,8 @@ async function askMove() {
   const ok = await ask(`<b>Walk around?</b><p class="dim" style="margin:8px 0 0">Every metre you walk takes 25 points off this round's 5,000 maximum (4,000 at the 40 m limit). Walking back does not raise it again.</p>`, 'Walk', 'Stay here');
   t.asking = false; if (ok && T === t && t.round === k && t.view === 'street') { t.moveOk = true; toast('Walking: WASD or arrow keys, Shift to run'); }
 }
-function capText() { const el = $('#gcap'); if (el) el.textContent = T.moved > 0 ? `Max ${nf(capOf(T.moved))}` : ''; }
+const capNow = () => Math.min(capOf(T.moved), T.rcap || MAXP);
+function capText() { const el = $('#gcap'); if (el) el.textContent = capNow() < MAXP ? `Max ${nf(capNow())}` : ''; }
 function total() { return T.res.reduce((a, r) => a + (r ? r.pts : 0), 0); }
 function bar() {
   if (!T) return;
@@ -206,43 +233,58 @@ function startTimer() {
 async function timeUp() { closeAsk(); if (T.view === 'street') await toMap(); if (!T) return; toast(T.pin ? 'Time is up: your pin counts' : 'Time is up'); confirmGuess(true); }
 
 function enter() {
-  prev = { opt: { ...S.opt }, season: S.season, on: [...S.on] };
+  prev = { opt: { ...S.opt }, season: S.season, on: [...S.on], mode: S.mode };
   S.opt.regions = false; S.opt.imagery = true; S.season = false; S.on = S.on.map(() => true);
   if (!S.opt.textures) { S.opt.textures = true; if (V3.renderer) V3.applyTextures(); }
   if (V3.ready) V3.applyKinds();
-  S.geo = hooks; S.sel = -1; S.hits = new Set(); hooks.hard = !!T.st.h;
+  S.geo = hooks; S.sel = -1; S.hits = new Set(); hooks.hard = !!T.st.h; $('#hitchip').style.display = 'none';
   document.body.classList.add('geo'); document.body.classList.remove('mopen'); $('#detail').style.display = 'none';
   A.applySeason(); A.seasonPanel(); V3.applyMarkers(); V3.hitSprites(); V3.missionSprites(); V3.unmark();
   history.replaceState(null, '', '#geo');
 }
-function leave() {
+async function leave() {
   closeAsk(); clearInterval(timer); T = null; S.geo = null; card(''); hint(''); $('#georeveal').style.display = 'none';
   document.body.classList.remove('geo');
+  const pm = prev && prev.mode;
   if (prev) {
     const tex = S.opt.textures !== prev.opt.textures; Object.assign(S.opt, prev.opt); S.season = prev.season;
     if (prev.on.length === S.on.length) S.on = prev.on;
     document.querySelectorAll('#kinds .row').forEach(r => r.querySelector('.switch').classList.toggle('on', !!S.on[+r.dataset.k]));
     if (tex && V3.renderer) V3.applyTextures(); prev = null;
+    const rs = document.querySelector('#layers .row[data-reg] .switch'); if (rs) rs.classList.toggle('on', !!S.opt.regions);
   }
   if (V3.cam) { V3.cam.fov = 60; V3.cam.updateProjectionMatrix(); }
-  A.applySeason(); A.seasonPanel(); V3.applyMarkers(); V3.missionSprites(); V3.dirty = true; A.setHash(); A.draw2d();
+  A.applySeason(); A.seasonPanel(); V3.applyMarkers(); V3.missionSprites(); V3.dirty = true;
+  if (pm && S.mode !== pm) await A.setMode(pm);
+  A.setHash(); A.draw2d();
 }
 async function quit() {
   const kept = T && T.kind === 'daily' && !T.replay;
   if (T && T.view !== 'done' && T.res.length && !(await ask(kept ? '<b>Leave today\'s challenge?</b><p class="dim" style="margin:8px 0 0">Your guesses so far already count as today\'s result. You can finish the other rounds later from the GeoGuesser menu.</p>' : '<b>Leave this game?</b><p class="dim" style="margin:8px 0 0">Your score so far is not saved.</p>', 'Leave', 'Keep playing'))) return;
-  const toMode = S.mode; leave(); if (toMode === '3d') V3.overview();
+  await leave(); if (S.mode === '3d') V3.overview();
 }
 
 async function start(def) {
-  try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
+  if (T || starting) return;
+  starting = true;
+  try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; } finally { starting = false; }
+  if (T) return;
   if (!def.spots.length) { A.fail('No spots match these settings.'); return; }
-  T = { ...def, round: 0, res: [], view: 'load' };
+  T = { ...def, round: 0, res: [], view: 'load', seen: [] };
   if (T.kind === 'daily') {
+    T.sh = spotHash(T.spots);
     const dr = store.get().daily?.[T.date];
     if (dr && !dr.open) T.replay = true;
     else if (dr && dr.open && Array.isArray(dr.res)) {
+      if (dr.sh && dr.sh !== T.sh) {
+        upd(o => { if (o.daily?.[T.date]) delete o.daily[T.date].open; });
+        T = null; card('');
+        oops('Today\'s spots were updated after you started, so your saved rounds can\'t be continued: they stay as today\'s result.');
+        return;
+      }
       T.st = { ...T.st, h: dr.h ? 1 : 0 };
       T.res = dr.res.slice(0, T.st.r).map(a => ({ g: Number.isFinite(a[3]) && Number.isFinite(a[4]) ? [a[3] * 10, a[4] * 10] : null, cap: Number.isFinite(a[5]) ? a[5] : MAXP, pts: +a[0] || 0, m: a[1], moved: !!a[2], secs: 0 }));
+      T.seen = Array.isArray(dr.seen) ? dr.seen.filter(k => int(k, 0, 9)) : [];
     }
   }
   card(''); enter();
@@ -251,6 +293,7 @@ async function start(def) {
 }
 async function round(k) {
   closeAsk(); T.round = k; T.sp = T.spots[k]; T.pin = null; T.moved = 0; T.moveOk = false; T.edge = false; T.fitted = false; T.view = 'load';
+  T.rcap = T.kind === 'daily' && !T.replay && T.seen.includes(k) ? RCAP : MAXP;
   T.others = T.kind === 'challenge' ? T.players : [];
   $('#georeveal').style.display = 'none'; hint(''); bar();
   const sp = T.sp;
@@ -262,6 +305,7 @@ async function round(k) {
   if (!T) return;
   V3.cam.position.set(sp.x, sp.z, sp.y); V3.yaw = sp.yaw; V3.pitch = 0; V3.cam.fov = 60; V3.cam.updateProjectionMatrix(); V3.unmark(); V3.keys.clear(); V3.dirty = true;
   T.view = 'street'; bar(); streetHint(); startTimer();
+  if (T.kind === 'daily' && !T.replay) { if (!T.seen.includes(k)) T.seen.push(k); saveDaily(true); if (T.rcap < MAXP) toast(`You left during this round earlier: its maximum is ${nf(T.rcap)}`); }
 }
 const touchOnly = () => matchMedia('(hover: none) and (pointer: coarse)').matches;
 function streetHint() { hint(touchOnly() ? 'Drag to look around · pinch to zoom' : `Drag to look around · wheel to zoom${T.st.m ? ' · WASD to walk (lowers the maximum)' : ''} · G for the map`); }
@@ -278,8 +322,8 @@ async function toStreet() {
 async function confirmGuess(force) {
   if (!T || T.view !== 'map' || (!T.pin && force !== true)) return;
   closeAsk(); clearInterval(timer);
-  const sp = T.sp, cap = capOf(T.moved), g = T.pin, pts = points(sp, g, cap), m = g ? away(sp, g) / 100 : null;
-  T.res[T.round] = { g, cap, pts, m, moved: T.moved > 100, secs: T.st.t ? Math.round(T.st.t - Math.max(0, T.deadline - performance.now()) / 1000) : 0 };
+  const sp = T.sp, cap = capNow(), g = T.pin, pts = points(sp, g, cap), m = g ? away(sp, g) / 100 : null;
+  T.res[T.round] = { g, cap, pts, m, moved: T.moved > 0, secs: T.st.t ? Math.round(T.st.t - Math.max(0, T.deadline - performance.now()) / 1000) : 0 };
   if (T.kind === 'daily' && !T.replay) saveDaily(true);
   T.view = 'reveal'; hint(''); bar();
   const xs = [sp.x], ys = [sp.y]; if (g) { xs.push(g[0]); ys.push(g[1]); }
@@ -294,7 +338,7 @@ function reveal() {
   const el = $('#georeveal'); el.style.display = 'block';
   el.innerHTML = `<div class="big">${r.g ? `${dist(r.m)} away` : 'No guess'} · ${nf(r.pts)} points</div>
     <div class="bar"><i style="width:${(r.pts / MAXP * 100).toFixed(1)}%"></i></div>
-    <div class="dim" style="font-size:12.5px">${esc(DNAME[sp.d])}${ra ? ` · the spot is in <b style="color:var(--text)">${esc(ra.name)}</b>` : ''}${r.g && ra && rg ? (rg === ra ? ' · ✓ right area' : ` · you picked ${esc(rg.name)}`) : ''}${r.cap < MAXP ? ` · maximum ${nf(r.cap)} (walked ${Math.round(T.moved / 100)} m)` : ''}</div>
+    <div class="dim" style="font-size:12.5px">${esc(DNAME[sp.d])}${ra ? ` · the spot is in <b style="color:var(--text)">${esc(ra.name)}</b>` : ''}${r.g && ra && rg ? (rg === ra ? ' · ✓ right area' : ` · you picked ${esc(rg.name)}`) : ''}${r.cap < MAXP ? ` · maximum ${nf(r.cap)}${T.moved > 0 ? ` (walked ${T.moved < 1000 ? (T.moved / 100).toFixed(1) : Math.round(T.moved / 100)} m)` : ' (you left during this round earlier)'}` : ''}</div>
     ${others.length ? `<div class="others">${others.map(([n, d, p]) => `${esc(n)}: ${d == null ? 'no guess' : dist(d)} · ${nf(p)}`).join(' &nbsp;·&nbsp; ')}</div>` : ''}
     <div class="row2"><button id="glook">View the spot</button><button class="primary" id="gnext">${last ? 'See results' : 'Next round'}</button></div>`;
   $('#gnext').onclick = next; $('#glook').onclick = look;
@@ -311,25 +355,35 @@ async function next() {
 }
 
 function saveDaily(open) {
+  let kept = null;
   upd(o => {
     o.daily = o.daily || {};
-    o.daily[T.date] = { h: T.st.h, maps: mapsOf(T), total: total(), res: T.res.map(r => [r.pts, r.m == null ? null : Math.round(r.m), r.moved ? 1 : 0, r.g ? Math.round(r.g[0] / 10) : null, r.g ? Math.round(r.g[1] / 10) : null, r.cap]) };
-    if (open) o.daily[T.date].open = 1;
+    const old = o.daily[T.date];
+    if (old && !old.open) { kept = old; return; }
+    const mine = T.res.map(r => r ? [r.pts, r.m == null ? null : Math.round(r.m), r.moved ? 1 : 0, r.g ? Math.round(r.g[0] / 10) : null, r.g ? Math.round(r.g[1] / 10) : null, r.cap] : null);
+    const was = old && Array.isArray(old.res) ? old.res : [], res = [];
+    for (let k = 0; k < Math.max(was.length, mine.length); k++) { const v = k < was.length ? was[k] : mine[k]; if (!v) break; res.push(v); }
+    const seen = [...new Set([...(old && Array.isArray(old.seen) ? old.seen : []), ...T.seen])].filter(k => k >= res.length).sort((a, b) => a - b);
+    o.daily[T.date] = { h: old ? old.h : T.st.h, maps: mapsOf(T), total: res.reduce((a, v) => a + (+v[0] || 0), 0), res, sh: T.sh };
+    if (seen.length) o.daily[T.date].seen = seen;
+    if (open && res.length < T.st.r) o.daily[T.date].open = 1;
+    kept = o.daily[T.date];
     const ks = Object.keys(o.daily).sort(); for (const k of ks.slice(0, -60)) delete o.daily[k];
   });
+  return kept;
 }
 const setKey = st => `${st.d}|${st.r}|m${st.m}|h${st.h}|t${st.t}|${[...st.ty].sort().join(',')}`;
 async function finish() {
   const tot = total(), max = T.st.r * MAXP, key = setKey(T.st); let best = 0, firstDaily = false;
   upd(o => {
     o.best = o.best || {};
-    if (T.kind !== 'daily' && !T.noBest) { best = o.best[key] || 0; if (tot > best) o.best[key] = tot; }
+    if (T.kind === 'free' && !T.noBest) { best = o.best[key] || 0; if (tot > best) o.best[key] = tot; }
   });
-  if (T.kind === 'daily' && !T.replay) { firstDaily = true; saveDaily(false); }
+  if (T.kind === 'daily' && !T.replay) { firstDaily = true; const kept = saveDaily(false); if (kept && kept.total !== tot) T.savedTotal = kept.total; }
   let board = null;
   if (T.kind === 'challenge') {
     const me = [T.name, T.res.map(r => r.g ? [Math.round(r.g[0] / 10), Math.round(r.g[1] / 10), r.cap, r.secs] : 0)];
-    T.me = me; const all = mergePlayers(T.id, [...T.players, me]);
+    T.me = me; const all = mergePlayers(T.id, [...T.players, me], T.spots, me);
     board = bestPerName(T.spots, all); if (!board.some(([p]) => p === me)) board.extra = [me, playerTotal(T.spots, me)];
   }
   if (S.mode === '3d') await A.setMode('2d');
@@ -339,7 +393,7 @@ async function finish() {
   card(`<h2>${esc(title)}</h2><div class="dim">${esc(mapsOf(T))} · ${T.st.r} rounds${T.st.h ? ' · hard mode' : ''}</div>
     <div class="big">${nf(tot)} <span class="dim" style="font-size:16px;font-weight:500">/ ${nf(max)}</span></div><div class="sq">${T.res.map(r => square(r.g ? r.pts : null)).join('')}</div>
     <table><tr><th>#</th><th>Map</th><th class="r">Distance</th><th class="r">Points</th></tr>${rows}</table>
-    ${T.kind === 'daily' ? `<p class="hint">${firstDaily ? 'Saved as your result for today.' : 'You already played today\'s challenge: this replay is not saved.'} A new challenge starts at 00:00 UTC.</p>` : ''}
+    ${T.kind === 'daily' ? `<p class="hint">${firstDaily ? (T.savedTotal != null ? `Your saved result for today is ${nf(T.savedTotal)}: rounds you had already played elsewhere count.` : 'Saved as your result for today.') : 'You already played today\'s challenge: this replay is not saved.'} A new challenge starts at 00:00 UTC.</p>` : ''}
     ${T.kind === 'free' && T.noBest ? '<p class="hint">An earlier day\'s challenge, played for fun: not saved.</p>' : ''}
     ${T.kind === 'free' && !T.noBest ? `<p class="hint">${tot > best ? (best ? `New best for these settings (was ${nf(best)}).` : 'First score for these settings.') : `Best for these settings: ${nf(best)}.`}</p>` : ''}
     ${board ? `<h4>Scoreboard</h4><table>${board.map(([p, t], i) => `<tr class="${p === T.me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(p[0])}</td><td class="r">${nf(t)}</td></tr>`).join('')}${board.extra ? `<tr class="me"><td>–</td><td>${esc(board.extra[0][0])} <span class="dim">(this game, your best counts)</span></td><td class="r">${nf(board.extra[1])}</td></tr>` : ''}</table><p class="hint">Players who opened other copies of the link show up here once you open their links too.</p>` : ''}
@@ -356,19 +410,18 @@ async function finish() {
 }
 async function challengeLink() {
   const name = (($('#gname') && $('#gname').value.trim()) || store.get().name || 'Player').slice(0, 16);
-  if (T.kind === 'challenge') {
-    if (T.me && T.me[0] !== name) { const old = T.me; T.me = [name, old[1]]; upd(o => { const c = o.ch?.[T.id]; if (c) { const k = c.p.findIndex(p => JSON.stringify(p) === JSON.stringify(old)); if (k >= 0) c.p[k] = T.me; } }); }
-    const all = store.get().ch?.[T.id]?.p || [...T.players, T.me];
-    return baseUrl() + '#geo=' + await pack(challengeObj(T.id, T.st, T.spots, all));
+  if (T.kind !== 'challenge' && !T.id) {
+    T.id = Math.random().toString(36).slice(2, 10).replace(/[^a-z0-9]/g, '').padEnd(4, '0');
+    T.me = [name, T.res.map(r => r.g ? [Math.round(r.g[0] / 10), Math.round(r.g[1] / 10), r.cap, r.secs] : 0)];
+    mergePlayers(T.id, [T.me], T.spots, T.me);
   }
-  if (!T.id) T.id = Math.random().toString(36).slice(2, 10).replace(/[^a-z0-9]/g, '') || 'game';
-  const me = [name, T.res.map(r => r.g ? [Math.round(r.g[0] / 10), Math.round(r.g[1] / 10), r.cap, r.secs] : 0)];
-  mergePlayers(T.id, [me]); T.kind = 'challenge'; T.players = []; T.me = me;
-  return baseUrl() + '#geo=' + await pack(challengeObj(T.id, T.st, T.spots, [me]));
+  if (T.me && T.me[0] !== name) { const old = T.me; T.me = [name, old[1]]; upd(o => { const c = o.ch?.[T.id]; if (c) { const k = c.p.findIndex(p => JSON.stringify(p) === JSON.stringify(old)); if (k >= 0) c.p[k] = T.me; } }); }
+  const all = capPlayers(T.spots, store.get().ch?.[T.id]?.p || [...(T.players || []), T.me], T.me);
+  return baseUrl() + '#geo=' + await pack(challengeObj(T.id, T.st, T.spots, all));
 }
 async function shareLine() {
   const tot = total(), max = T.st.r * MAXP, sq = T.res.map(r => square(r.g ? r.pts : null) + (r.moved ? '🚶' : '')).join('');
-  const label = T.kind === 'daily' ? `Daily ${T.date}` : T.kind === 'challenge' ? 'Challenge' : 'Free play';
+  const label = T.kind === 'daily' ? (T.replay ? `Daily ${T.date} (replay, not my result)` : `Daily ${T.date}`) : T.kind === 'challenge' ? 'Challenge' : T.noBest ? `Daily ${T.date} (replay)` : 'Free play';
   const link = T.kind === 'daily' ? baseUrl() + '#geo=daily-' + T.date : await challengeLink();
   return `APB GeoGuesser · ${label} · ${mapsOf(T)} · ${nf(tot)} / ${nf(max)} ${sq}${T.st.h ? ' 🔒' : ''} ${link}`;
 }
@@ -376,11 +429,13 @@ async function shareLine() {
 let DAILY = null;
 async function dailyList() {
   if (DAILY) return DAILY;
-  try { const r = await fetch('data/daily.json', { cache: 'no-cache' }); const o = r.ok ? await r.json() : null; DAILY = o && o.v === 1 && o.days && typeof o.days === 'object' ? o.days : {}; } catch { DAILY = {}; }
+  try { const r = await fetch('data/daily.json', { cache: 'no-cache' }); const o = r.ok ? await r.json() : null; if (o && o.v === 1 && o.days && typeof o.days === 'object') DAILY = o.days; } catch { }
   return DAILY;
 }
 async function dailyDef(date, hard) {
-  const st = { ...DEF, h: hard ? 1 : 0 }, list = (await dailyList())[date];
+  const st = { ...DEF, h: hard ? 1 : 0 }, days = await dailyList();
+  if (!days) throw new Error('the daily schedule could not load. Check your connection and try again');
+  const list = days[date];
   let spots = null;
   if (Array.isArray(list) && list.length === st.r && list.every(a => Array.isArray(a) && int(a[0], 0, DLIST.length - 1) && a.slice(1, 5).every(Number.isFinite)))
     spots = list.map(a => ({ d: DLIST[a[0]], x: a[1] * 10, y: a[2] * 10, z: a[3] * 10, yaw: a[4] / 1000 }));
@@ -388,6 +443,7 @@ async function dailyDef(date, hard) {
 }
 async function setup(tab, keep) {
   try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
+  upd(x => { const t = today(); for (const [k, v] of Object.entries(x.daily || {})) if (v && v.open && (k < t || (Array.isArray(v.res) && v.res.length >= DEF.r))) delete v.open; });
   const o = store.get(), st = { ...DEF, ...(o.set || {}), ...(keep || {}) }; st.ty = (Array.isArray(st.ty) ? st.ty : DEF.ty).filter(t => Object.hasOwn(TNAME, t)); if (st.d !== 'all' && !GEO.ok[st.d]) st.d = 'all';
   const avail = DLIST.filter(n => GEO.ok[n]), date = today(), dres = o.daily?.[date], dopen = !!(dres && dres.open); let dh = dopen ? (dres.h ? 1 : 0) : o.dailyHard ? 1 : 0;
   const sw = (id, on) => `<span class="switch ${on ? 'on' : ''}" id="${id}" role="switch" tabindex="0" aria-checked="${on}"></span>`;
@@ -400,7 +456,7 @@ async function setup(tab, keep) {
     if (tab === 'daily') {
       el.innerHTML = `<h4>${esc(date)} (UTC)</h4><div class="dim">5 rounds on two of the six maps, the same spots for everyone today. Walking allowed.</div>
         ${dres ? `<p>${dopen ? `In progress, round ${dres.res.length + 1} of 5 next:` : 'Your result:'} <b>${nf(dres.total)}</b> / 25,000 ${dres.res.map(r => square(r[1] == null ? null : r[0]) + (r[2] ? '🚶' : '')).join('')}${dres.h ? ' 🔒' : ''}</p>` : ''}
-        ${dopen ? `<p class="hint">Your first guesses count, so this continues where you left off${dres.h ? ' (in hard mode)' : ''}.</p>` : `<div class="opt"><span>Hard mode<br><span class="hint">no labels or icons on the guessing map</span></span>${sw('ghard', dh)}</div>`}
+        ${dopen ? `<p class="hint">Your first guesses count, so this continues where you left off${dres.h ? ' (in hard mode)' : ''}.${Array.isArray(dres.seen) && dres.seen.includes(dres.res.length) ? ` You left during round ${dres.res.length + 1}: its maximum is now ${nf(RCAP)}.` : ''}</p>` : `<div class="opt"><span>Hard mode<br><span class="hint">no labels or icons on the guessing map</span></span>${sw('ghard', dh)}</div>`}
         <div class="btns"><button class="primary" id="gstart">${dopen ? 'Continue today\'s challenge' : dres ? 'Play again (not saved)' : 'Play today\'s challenge'}</button>${dres && !dopen ? '<button id="gdshare">Copy result</button>' : ''}<button id="gcancel">Close</button></div>`;
     } else {
       el.innerHTML = `<h4>Settings</h4>
@@ -421,8 +477,13 @@ async function setup(tab, keep) {
     el.querySelectorAll('.switch').forEach(x => x.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); x.click(); } });
     $('#gcancel').onclick = () => card('');
     if ($('#gdshare')) $('#gdshare').onclick = () => copy(`APB GeoGuesser · Daily ${date} · ${dres.maps || 'Mixed maps'} · ${nf(dres.total)} / 25,000 ${dres.res.map(r => square(r[1] == null ? null : r[0]) + (r[2] ? '🚶' : '')).join('')}${dres.h ? ' 🔒' : ''} ${baseUrl()}#geo=daily-${date}`, $('#gdshare'));
-    $('#gstart').onclick = () => {
-      if (tab === 'daily') return dailyDef(date, dh).then(start);
+    $('#gstart').onclick = async () => {
+      if (tab === 'daily') {
+        if (today() !== date) { toast('A new day has started: here is today\'s challenge'); setup('daily'); return; }
+        const b = $('#gstart'); b.disabled = true;
+        try { await start(await dailyDef(date, dh)); } catch (e) { oops('Today\'s challenge could not start: ' + e.message + '.'); } finally { if (b.isConnected) b.disabled = false; }
+        return;
+      }
       if (!st.ty.length) { toast('Pick at least one spot type'); return; }
       const seed = Math.random().toString(36).slice(2);
       start({ kind: 'free', st: { ...st }, spots: makeSpots(seed, st), name: store.get().name || '' });
@@ -434,7 +495,7 @@ async function setup(tab, keep) {
   draw();
 }
 async function openChallenge(code) {
-  let c; try { await geoData(); c = checkChallenge(await unpack(code)); } catch (e) { A.fail('This GeoGuesser link does not work: ' + e.message); return; }
+  let c; try { await geoData(); c = checkChallenge(await unpack(code)); } catch (e) { oops('This GeoGuesser link does not work: ' + e.message); return; }
   const all = mergePlayers(c.id, c.players), board = bestPerName(c.spots, all);
   const name = store.get().name || '';
   card(`<h2>GeoGuesser challenge</h2><div class="dim">${c.st.r} rounds · ${esc([...new Set(c.spots.map(s => DNAME[s.d]))].join(', '))}${c.st.m ? ' · walking allowed' : ' · no walking'}${c.st.h ? ' · hard mode' : ''}${c.st.t ? ` · ${c.st.t} s per round` : ''}</div>
@@ -451,14 +512,14 @@ async function openChallenge(code) {
 }
 async function fromHash(h) {
   const m = /^#geo=(.+)$/.exec(typeof h === 'string' ? h : location.hash); if (!m || T) return;
-  const v = decodeURIComponent(m[1]);
+  let v; try { v = decodeURIComponent(m[1]); } catch { oops('This GeoGuesser link does not work: it is cut off or damaged.'); return; }
   if (v === 'daily' || /^daily-\d{4}-\d{2}-\d{2}$/.test(v)) {
     const d = v === 'daily' ? today() : v.slice(6);
     if (d >= today()) { setup('daily'); return; }
     try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
     card(`<h2>Daily challenge · ${esc(d)}</h2><div class="dim">This link is for an earlier day. You can play that day's spots for fun (not saved), or today's challenge.</div>
       <div class="btns"><button class="primary" id="gold">Play ${esc(d)}</button><button id="gnow">Today's challenge</button><button id="gcancel">Close</button></div>`);
-    $('#gold').onclick = async () => { const def = await dailyDef(d, 0); def.kind = 'free'; def.noBest = true; def.name = store.get().name || ''; start(def); };
+    $('#gold').onclick = async () => { let def; try { def = await dailyDef(d, 0); } catch (e) { oops('That day could not load: ' + e.message + '.'); return; } def.kind = 'free'; def.noBest = true; def.name = store.get().name || ''; start(def); };
     $('#gnow').onclick = () => setup('daily'); $('#gcancel').onclick = () => card('');
     return;
   }
@@ -472,7 +533,11 @@ document.addEventListener('keydown', e => {
   else if (k === 'enter') { if (T.view === 'map' && T.pin) { e.preventDefault(); confirmGuess(); } else if (T.view === 'reveal' || T.view === 'look') { e.preventDefault(); next(); } }
   else if (k === 'escape' && T.view === 'map') toStreet();
 });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || $('#geocard').style.display !== 'block' || $('#geoconfirm').style.display === 'block' || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+  if (!T) { card(''); if (/^#geo=/.test(location.hash)) A.setHash(); } else if (T.view === 'done') leave();
+});
 $('#geobtn').onclick = () => { const d = store.get().daily?.[today()]; setup(d && !d.open ? 'free' : 'daily'); };
 window.addEventListener('hashchange', fromHash);
 A.ready.then(() => { if (S.index) fromHash(firstHash); });
-window.APB.geo = { get T() { return T; }, makeSpots, dailyDef, points, capOf, pack, unpack, checkChallenge, geoData, setup, start };
+window.APB.geo = { get T() { return T; }, makeSpots, dailyDef, points, capOf, pack, unpack, checkChallenge, capPlayers, spotHash, geoData, setup, start };

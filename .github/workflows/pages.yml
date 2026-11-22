@@ -23,6 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
       - name: Put the bot data over the uploaded copies
         run: bash .github/scripts/data-load.sh designer/data.json maps/data/daily.json
         env:

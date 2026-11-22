@@ -51,7 +51,12 @@ uploading, take those two files from the repository (or leave them out). Optiona
 repository variable `DATA_BRANCH` (Settings > Secrets and variables > Actions > Variables, e.g. `site-data`) and switch
 **Settings > Pages > Source** to **GitHub Actions**. The bots then commit to that branch only, and the **Deploy site with
 the bot data** workflow publishes your branch with the bot files laid over it, so uploads can never overwrite them.
-Without the variable everything works as before.
+Without the variable everything works as before. In data-branch mode the branch copies always win, so a
+`designer/data.json` or `daily.json` you rebuild locally only takes effect once you upload it to the data branch
+itself (or run the matching workflow there). **DB Update APBDB** skips APBDB versions that are not newer than the held
+data; **force** re-syncs the same version, and **allow_older** (with force) is needed to accept an older APBDB version
+over the game data. A run where APBDB fails part-way still saves what it got but does not mark the version as synced,
+so the next run tries again.
 
 The spots (`maps/data/geo.json`) are made automatically from the map data: a top-down height map of every district
 finds flat ground near streets and flat roofs, then each spot is checked by rendering the scene around it (floor under
@@ -82,7 +87,7 @@ Browse every image you can put into APB Reloaded localisation text and copy the 
 - **HUD icons**: named HUD icons built from the icon atlas, as `<APB_Images:Name;…HUDIcon=TRUE>` or `<hudicon:Name;…>`.
 - **Icon atlas**: every 32×32 cell of the HUD icon atlas with the names that use it.
 
-**Animate** (top bar) plays the 49 animated materials and flipbooks in the grid; the **▶ Animated** group lists
+**Animate** (top bar) plays the 50 animated materials and flipbooks in the grid; the **▶ Animated** group lists
 them, and the detail view has its own Play / Pause button. The animations are rendered from each material's node
 graph (time, panning, rotation, pulsing, texture switching) with the game's default parameter values, so they are a
 close approximation, not a capture from the game. Materials the game only animates through values it sets while
@@ -155,7 +160,8 @@ How the numbers are worked out:
 
 - **Time to kill** is the time from the first to the last shot needed, with every shot (and every shotgun pellet) hitting:
   1000 health, or 1000 stamina for less-than-lethal weapons. Burst weapons wait their burst interval after each
-  burst; weapons with a wind-up add it. **Shots to kill past falloff** uses the weapon's minimum damage percentage.
+  burst; weapons with a wind-up add it; when more shots are needed than the magazine holds, each reload is added
+  (e.g. the PDW57-S). **Shots to kill past falloff** uses the weapon's minimum damage percentage.
 - **Mission stage times**: stages with no time limit set use the 5:00 default.
 - **Built-in modifications** (for example the UL-3 'Jersey Devil' Speed Demon Special, +10% fire rate) are applied:
   fire rate, damage, magazine, ammo, reload, equip time and range. Turn this off to see the base weapon.

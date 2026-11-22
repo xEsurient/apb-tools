@@ -6,6 +6,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const DATA = path.join(ROOT, 'designer', 'data.json');
 const API = 'https://api.apbdb.com/beacon';
 const FORCE = process.argv.includes('--force') || process.env.FORCE_SYNC === 'true';
+const ALLOW_OLDER = process.argv.includes('--allow-older') || process.env.ALLOW_OLDER === 'true';
 const LIMIT = +(process.env.SYNC_LIMIT || 0);
 
 const vcls = c => ({ Car: 'Cars', Truck: 'Trucks', Van: 'Vans' })[(/^Vehicle(Car|Truck|Van)/.exec(c || '') || [])[1]] || '';
@@ -18,8 +19,9 @@ const vnum = v => String(v || '').split(/\D+/).filter(Boolean).map(Number);
 const newer = (a, b) => { const x = vnum(a), y = vnum(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 const dumpLines = o => '{' + Object.entries(o).map(([k, v]) => JSON.stringify(k) + ':' + (Array.isArray(v) && v.length ? '[\n' + v.map(x => JSON.stringify(x)).join(',\n') + '\n]' : JSON.stringify(v))).join(',\n') + '}\n';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let requests = 0, failures = 0;
+let requests = 0, failures = 0, calls = 0;
 async function get(url, tries = 4) {
+  calls++;
   for (let t = 1; ; t++) {
     try {
       requests++;
@@ -48,6 +50,7 @@ async function missionList() {
   for (let page = 1; page < 50; page++) { const j = await get(`${API}/missions?limit=100&page=${page}`); const m = (j && j.missions) || []; out.push(...m); if (m.length < 100) break; }
   return LIMIT ? out.slice(0, LIMIT) : out;
 }
+const idOr = (v, alt) => v !== undefined && v !== null && v !== '' && Number.isFinite(+v) ? +v : +alt;
 const detail = (kind, row) => get(`${API}/${kind}/${encodeURIComponent(row)}`);
 
 const text = v => v === undefined || v === null || v === 'None' ? '' : String(v).replace(/\r\n|\r|\n/g, '↵');
@@ -112,7 +115,7 @@ function merge(held, fresh, idOf = x => x.id) {
   const at = new Map(held.map((x, i) => [idOf(x), i])), out = held.slice(); let updated = 0, added = 0;
   for (const f of fresh) {
     if (!f) continue; const i = at.get(idOf(f));
-    if (i === undefined) { out.push(f); added++; continue; }
+    if (i === undefined) { at.set(idOf(f), out.length); out.push(f); added++; continue; }
     out[i] = f.stages && held[i].stages ? mergeStages(held[i], f) : keepText(held[i], { ...held[i], ...f }); updated++;
   }
   return { list: out, updated, added };
@@ -129,6 +132,7 @@ async function main() {
   if (!version) throw new Error('APBDB version not available');
   const base = [held.build, held.apbdb && held.apbdb.version].filter(Boolean).reduce((a, b) => newer(b, a) ? b : a, '');
   if (!FORCE && base && !newer(version, base)) { console.log(`APBDB ${version} is not newer than held data ${base}; nothing to do.`); return; }
+  if (FORCE && base && newer(base, version) && !ALLOW_OLDER) throw new Error(`APBDB ${version} is OLDER than the held data ${base}: forcing would roll the numbers back. Run with allow_older (ALLOW_OLDER=true) if that is really wanted.`);
   console.log(`Syncing APBDB ${version} (held: ${held.apbdb ? held.apbdb.version : 'game data only'})`);
   const infra = held.infra || {}, stats = {};
 
@@ -141,20 +145,24 @@ async function main() {
     const d = await detail('items', it.sAPBDB); if (!d || !d.detail || skipTest(d)) return null;
     const dt = d.detail, link = obj(dt.eWeaponTypeLink) || {}, old = hw.get(+d.id);
     const types = [0, 1, 2, 3].map(k => wtype(link['eWeaponType_' + k])).filter(Boolean);
-    return { id: +d.id, key: old ? old.key : `WeaponItemTypes_${d.sAPBDB}_Description${sw(d.sAPBDB)}`, row: d.sAPBDB, name: text(d.sDisplayName),
+    return { id: +d.id, key: old ? old.key : null, row: d.sAPBDB, name: text(d.sDisplayName),
       cat: infra[d.infracategory] || humanise(d.infracategory), side: d.bEnforcer && !d.bCriminal ? 'E' : d.bCriminal && !d.bEnforcer ? 'C' : '', test: +d.bIsTestItem || 0, event: EVENT.test(d.sAPBDB) ? 1 : 0,
       desc: text(dt.sDescription), types, mods: [0, 1, 2].map(k => fnmod(dt['eFnMod_' + k], WEFF)).filter(Boolean) };
   });
+
+  weapons.forEach(w => { if (w && w.key === null) w.key = `WeaponItemTypes_${w.row}_Description${sw(w.row)}`; });
 
   const vl = await items('Vehicle'); console.log(`vehicles: ${vl.length}`);
   const vehicles = await pool(vl, 8, async it => {
     const d = await detail('items', it.sAPBDB); if (!d || !d.detail || !obj(d.detail.eVehicle) || skipTest(d)) return null;
     const dt = d.detail, v = dt.eVehicle, old = hv.get(+d.id);
-    return { id: +d.id, key: old ? old.key : `VehicleItemTypes_${d.sAPBDB}_Description${sv(d.sAPBDB)}`, row: d.sAPBDB, name: text(d.sDisplayName), model: text(v.sDisplayName), cls: vcls(d.infracategory),
+    return { id: +d.id, key: old ? old.key : null, row: d.sAPBDB, name: text(d.sDisplayName), model: text(v.sDisplayName), cls: vcls(d.infracategory),
       desc: text(dt.sDescription), test: +d.bIsTestItem || 0, health: +v.nMaxHealth || 0, speed: num(v.fMaxSpeed), rev: num(v.fMaxReverseSpeed),
       cargo: (+v.nMainCargoPipCapacity || 0) + (+v.nCabinCargoPipCapacity || 0), exp: explosion(v.eExplosionType), ram: num(v.fRamraidDamageMultiplier), collide: num(v.fCollisionDamage), emp: num(v.fEMPSusceptability),
       mods: [0, 1, 2, 3].map(k => fnmod(dt['eFnMod_' + k], VEFF)).filter(Boolean) };
   });
+
+  vehicles.forEach(v => { if (v && v.key === null) v.key = `VehicleItemTypes_${v.row}_Description${sv(v.row)}`; });
 
   const ml = await items('FnMod'); console.log(`modifications: ${ml.length}`);
   const sm = suffixer(held.mods, x => x.key.replace(/^ModifierItemTypes_|_Description(_\d+)?$/g, ''));
@@ -162,8 +170,23 @@ async function main() {
     const d = await detail('items', it.sAPBDB); if (!d || !obj(d.detail) || skipTest(d) || /TestMod|Devlar|DevPackage|_Test[A-Z]?$/.test(d.sAPBDB)) return null;
     const dt = d.detail, mi = obj(dt.eModifierItem); if (!mi || !mi.id) return null;
     const id = u32(dt.nSecondaryKey), old = hm.get(id), cat = obj(mi.eModifierCategory);
-    return { id, key: old ? old.key : `ModifierItemTypes_${dt.sAPBDB}_Description${sm(dt.sAPBDB)}`, nameKey: `InventoryItemTypes_${d.sAPBDB}_DisplayName`, name: text(d.sDisplayName),
+    const kind = /^Weapon_/i.test(cat ? cat.sAPBDB : '') ? 'weapon' : /^Vehicle_/i.test(cat ? cat.sAPBDB : '') ? 'vehicle' : '';
+    const def = kind ? { kind, row: d.sAPBDB, name: text(d.sDisplayName), cat: cat.sAPBDB, eff: (mi.aModifierEffects || []).filter(e => Number.isFinite(+e.eEffectType)).map(e => [+e.eEffectType, num(e.fEffectMultiplier), num(e.fAddToResult), text(e.sDescription)]) } : null;
+    return { id, key: old ? old.key : null, _mrow: dt.sAPBDB, _def: def, _new: !old, nameKey: `InventoryItemTypes_${d.sAPBDB}_DisplayName`, name: text(d.sDisplayName),
       cat: cat ? cat.sAPBDB : '', desc: text(dt.sDescription), lines: (mi.aModifierEffects || []).map(e => text(e.sDescription)).filter(Boolean) };
+  });
+
+  const defs = { weapon: (held.modDefs && held.modDefs.weapon || []).slice(), vehicle: (held.modDefs && held.modDefs.vehicle || []).slice() }; let defsAdded = 0, defsUpdated = 0;
+  mods.forEach(m => {
+    if (!m) return;
+    if (m.key === null) m.key = `ModifierItemTypes_${m._mrow}_Description${sm(m._mrow)}`;
+    const d = m._def, isNew = m._new; delete m._mrow; delete m._def; delete m._new;
+    if (!d || !d.eff.length) return;
+    const list = defs[d.kind], i = list.findIndex(x => x.row === d.row);
+    const sameEff = (a, b) => a.length === b.length && a.every((e, k) => e[0] === b[k][0] && e[1] === b[k][1] && e[2] === b[k][2] && (e[3] === b[k][3] || same(e[3], b[k][3])));
+    if (i < 0 && (!isNew || list.some(x => x.name === d.name && sameEff(x.eff, d.eff)))) return;
+    if (i < 0) { list.push({ row: d.row, name: d.name, icon: `APBMenus_Art_UpgradeIcons.${d.kind === 'weapon' ? 'Weapons' : 'Vehicle'}.${d.row}`, cat: d.cat, eff: d.eff }); defsAdded++; }
+    else if (!sameEff(list[i].eff, d.eff)) { list[i] = { ...list[i], eff: d.eff }; defsUpdated++; }
   });
 
   const rl0 = (await get(`${API}/roles`)) || [], rl = LIMIT ? rl0.slice(0, LIMIT) : rl0; console.log(`roles: ${rl.length}`);
@@ -171,30 +194,34 @@ async function main() {
   const sr = suffixer(held.roles, x => x.row);
   const roles = await pool(rl, 6, async it => {
     const d = await detail('roles', it.sAPBDB); if (!d || !d.aMilestones) return null;
-    const id = u32(d.nSecondaryKey), old = hr.get(id), suf = old ? old.key.match(/_Description(_\d+)?$/)[1] || '' : sr(d.sAPBDB);
+    const id = u32(d.nSecondaryKey), old = hr.get(id), suf = old ? old.key.match(/_Description(_\d+)?$/)[1] || '' : null;
     const acts = [0, 1, 2].map(k => obj(d['eActivities_' + k])).filter(Boolean).map(a => a.sAPBDB);
     const ranks = d.aMilestones.map(m => ({ id: u32(m.nSecondaryKey), key: hk.get(u32(m.nSecondaryKey)) || `RoleMilestones_${m.sAPBDB}_Title`, title: text(m.sTitle),
       pass: [num(m.fPassMark_0), num(m.fPassMark_1), num(m.fPassMark_2)], formula: +m.eFormula || 0, ...reward(m.eReward) }));
-    return { id, key: `PlayerRoles_${d.sAPBDB}_Description${suf}`, nameKey: `PlayerRoles_${d.sAPBDB}_DisplayName${suf}`, row: d.sAPBDB, name: text(d.sDisplayName), desc: text(d.sDescription),
+    return { id, suf, row: d.sAPBDB, name: text(d.sDisplayName), desc: text(d.sDescription),
       faction: obj(d.eFaction) ? +d.eFaction.eFaction : +d.eFaction || 0, ach: +d.bAchievement || 0, acts, ranks };
   });
+
+  roles.forEach((r, i) => { if (!r) return; const { suf, ...rest } = r, sx = suf === null ? sr(r.row) : suf; roles[i] = { id: r.id, key: `PlayerRoles_${r.row}_Description${sx}`, nameKey: `PlayerRoles_${r.row}_DisplayName${sx}`, ...rest }; });
 
   const cl0 = (await get(`${API}/contacts`)) || [], cl = LIMIT ? cl0.slice(0, LIMIT) : cl0; console.log(`contacts: ${cl.length}`);
   const hc = byId(held.contacts, x => x.id), hd = byId(held.daily, x => x.id), sc = suffixer(held.contacts, x => x.row), sd = suffixer(held.daily, x => x.row);
   const daily = [];
   const contacts = await pool(cl, 6, async it => {
     const d = await detail('contacts', it.sAPBDB); if (!d || +d.bTest) return null;
-    const id = guid(d.nSecondaryKey), old = hc.get(id), name = text(d.sTitle);
+    const id = guid(d.nSecondaryKey), old = hc.get(id), name = text(d.sTitle), own = [];
     const levels = (d.aContactLevels || []).slice().sort((a, b) => a.nLevel - b.nLevel);
     for (const l of levels) for (const a of l.aDailyActivities || []) {
       const da = obj(a.eDailyActivity) || {}, rr = obj(da.eRedeemableReward), aid = u32(a.nSecondaryKey), prev = hd.get(aid);
-      daily.push({ id: aid, row: a.sAPBDB, suf: prev ? prev.suf : sd(a.sAPBDB), title: text(a.sTitle), hud: text(a.sHUDDescription), long: text(a.sLongDescription),
+      own.push({ id: aid, row: a.sAPBDB, suf: prev ? prev.suf : null, title: text(a.sTitle), hud: text(a.sHUDDescription), long: text(a.sLongDescription),
         req: +da.nRequirement || 0, act: prev ? prev.act : '', reward: rr ? reward(rr.eReward).items : [], rewardRow: rr ? rr.sAPBDB : '', contact: name, level: +l.nLevel || 0, off: +a.bDisabled || 0 });
     }
-    return { id, key: old ? old.key : `Contacts_${d.sAPBDB}_Description${sc(d.sAPBDB)}`, row: d.sAPBDB, name, desc: text(d.sDescription),
+    return { id, key: old ? old.key : null, _daily: own, row: d.sAPBDB, name, desc: text(d.sDescription),
       org: obj(d.eOrganisation) ? +d.eOrganisation.eOrganisation : +d.eOrganisation || 0, hidden: +d.bHidden || 0,
       levels: levels.map(l => ({ lvl: +l.nLevel || 0, standing: +l.nStandingThreshold || 0, ...reward(l.eRewardPackage) })) };
   });
+
+  contacts.forEach(c => { if (!c) return; if (c.key === null) c.key = `Contacts_${c.row}_Description${sc(c.row)}`; for (const x of c._daily) { if (x.suf === null) x.suf = sd(x.row); daily.push(x); } delete c._daily; });
 
   const msl = await missionList(); console.log(`missions: ${msl.length}`);
   const hmi = byId(held.missions, x => x.id), hs = new Map(held.missions.flatMap(m => m.stages).map(s => [s.id, s.suf]));
@@ -203,24 +230,31 @@ async function main() {
     const d = await detail('missions', it.sAPBDB); if (!d || !d.aStages || +d.bTest) return null;
     const stages = d.aStages.map(s => {
       const op = obj(s.eOperation) || {}, cat = obj(op.eTaskOperationCategory), v = obj(s.eTaskItemVariety) || {};
-      return { id: +s.eTaskObjective || +s.id, row: s.sAPBDB, suf: hs.has(+s.eTaskObjective) ? hs.get(+s.eTaskObjective) : ss(s.sAPBDB), stage: +s.eStage || 0, op: op.sAPBDB || '', cat: cat ? cat.sAPBDB : '',
+      const sid = idOr(s.eTaskObjective, s.id);
+      return { id: sid, row: s.sAPBDB, suf: hs.has(sid) ? hs.get(sid) : null, stage: +s.eStage || 0, op: op.sAPBDB || '', cat: cat ? cat.sAPBDB : '',
         n: +s.nTargetsRequired || 0, items: +s.nTaskItemsRequired || 0, veh: +s.nVehiclesRequired || 0, time: +s.nTimeLimit || 0, bonus: +s.bBonusTime || 0, conc: +s.bIsConcurrent || 0,
         opp: +s.bIsOpposition || 0, heavy: num(v.fVehicleTorqueReductionFactor) >= 0.5 ? 1 : 0, owner: text(s.sOwnerBrief), dispatch: text(s.sDispatchBrief) };
     });
-    return { id: +d.eMissionTemplate || +d.id, row: d.sAPBDB, title: text(d.sMissionTitle), off: +d.bDisabled || 0, stages };
+    return { id: idOr(d.eMissionTemplate, d.id), row: d.sAPBDB, title: text(d.sMissionTitle), off: +d.bDisabled || 0, stages };
   });
 
-  const sections = { weapons, vehicles, mods, roles, contacts, daily, missions }, out = { ...held };
+  missions.forEach(m => { if (m) for (const st of m.stages) if (st.suf === null) st.suf = ss(st.row); });
+
+  const sections = { weapons, vehicles, mods, roles, contacts, daily, missions }, out = { ...held }, empty = [];
   for (const [k, list] of Object.entries(sections)) {
     const got = list.filter(Boolean);
-    if (!got.length) { console.warn(`${k}: nothing from APBDB, keeping the held copy`); stats[k] = { apbdb: 0, updated: 0, added: 0 }; continue; }
+    if (!got.length) { empty.push(k); console.warn(`${k}: nothing from APBDB, keeping the held copy`); stats[k] = { apbdb: 0, updated: 0, added: 0 }; continue; }
     const m = merge(held[k], got); out[k] = m.list; stats[k] = { apbdb: got.length, updated: m.updated, added: m.added, held: held[k].length };
     console.log(`${k}: ${got.length} from APBDB, ${m.updated} updated, ${m.added} new, ${m.list.length} total`);
   }
-  if (failures > requests * 0.05) throw new Error(`${failures} of ${requests} requests failed; not writing`);
-  out.apbdb = { version, synced: new Date().toISOString(), requests, failures, stats };
+  if (failures > calls * 0.05) throw new Error(`${failures} of ${calls} requests failed; not writing`);
+  out.modDefs = { ...(held.modDefs || {}), weapon: defs.weapon, vehicle: defs.vehicle };
+  stats.modDefs = { added: defsAdded, updated: defsUpdated };
+  const partial = failures > 0 || empty.length > 0, prev = held.apbdb || {};
+  out.apbdb = { version: partial ? prev.version || null : version, synced: new Date().toISOString(), requests, calls, failures, stats, ...(partial ? { partialOf: version, empty } : {}) };
   await fs.writeFile(DATA, dumpLines(out));
-  console.log(`Wrote ${path.relative(ROOT, DATA)} (${requests} requests, ${failures} failed)`);
+  console.log(`Wrote ${path.relative(ROOT, DATA)} (${calls} requests, ${failures} failed${partial ? `; PARTIAL: version ${version} not marked as synced, the next run tries again` : ''})`);
+  if (process.env.GITHUB_STEP_SUMMARY) await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, `## APBDB sync ${version}${partial ? ' (partial)' : ''}\n\n| section | from APBDB | updated | new |\n|---|---|---|---|\n${Object.entries(stats).filter(([k]) => k !== 'modDefs').map(([k, v]) => `| ${k} | ${v.apbdb} | ${v.updated} | ${v.added} |`).join('\n')}\n\nMod effects: ${defsAdded} new, ${defsUpdated} updated. Requests: ${calls}, failed: ${failures}.${empty.length ? ` Empty sections: ${empty.join(', ')}.` : ''}\n`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

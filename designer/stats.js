@@ -21,9 +21,11 @@ export function shotGap(w, k) {
 }
 export function timeFor(w, shots) {
   let t = w.windUp || 0;
-  for (let k = 1; k < shots; k++) t += shotGap(w, k);
+  const mag = w.mag > 0 ? w.mag : Infinity;
+  for (let k = 1; k < shots; k++) t += k % mag === 0 ? Math.max(w.reload || 0, shotGap(w, k)) : shotGap(w, k);
   return t;
 }
+export const reloadsFor = (w, shots) => w.mag > 0 ? Math.floor((shots - 1) / w.mag) : 0;
 
 export function weaponStats(t, mods, useMods, C) {
   const w = effective(t, mods, useMods), hp = C.PlayerHealth || 1000, st = C.PlayerStamina || 1000;
@@ -50,7 +52,7 @@ const plainDesc = s => String(s || '').replace(/<[^<>]*>/g, '');
 export function vehAdd(t, mul, add, desc) { if (t !== 121 || mul !== 1 || !add) return add; const m = /([+-]?\d+(?:\.\d+)?)\s*m\/s/i.exec(plainDesc(desc)); return m ? +m[1] : add; }
 export function applyVehMod(a, eff) {
   for (const [t, mul, add, desc] of eff) {
-    if (t === 118) a.health = a.health * mul + add; else if (t === 121) a.speed = a.speed * mul + vehAdd(t, mul, add, desc); else if (t === 114) a.cargo = a.cargo * mul + add;
+    if (t === 118) a.health = a.health * mul + add; else if (t === 121 && mul > 2 && /maximum/i.test(plainDesc(desc))) a.speedMax = true; else if (t === 121) a.speed = a.speed * mul + vehAdd(t, mul, add, desc); else if (t === 114) a.cargo = a.cargo * mul + add;
     else if (t === 16) a.gun *= mul; else if (t === 14) a.col *= mul; else if (t === 44 && a.er !== null) a.er *= mul; else if (t === 109 && a.emp !== null) a.emp *= mul;
   }
   return a;
@@ -63,5 +65,5 @@ export function vehicleStats(v, useMods, defs) {
     const d = by && (by.get(m.row) || by.get(m.row.replace(/_Joker$/, '')));
     if (d) applyVehMod(a, d.eff); else for (const [k, mul, add] of m.eff) if (k === 'cargo') a.cargo = a.cargo * mul + add;
   }
-  return { ...v, health: Math.round(a.health), speed: +a.speed.toFixed(2), cargo: Math.round(a.cargo), exp: v.exp ? { ...v.exp, r: a.er } : v.exp, emp: a.emp === null ? undefined : a.emp, gun: a.gun, col: a.col, modNames: names };
+  return { ...v, speedMax: !!a.speedMax, health: Math.round(a.health), speed: +a.speed.toFixed(2), cargo: Math.round(a.cargo), exp: v.exp ? { ...v.exp, r: a.er } : v.exp, emp: a.emp === null ? undefined : a.emp, gun: a.gun, col: a.col, modNames: names };
 }

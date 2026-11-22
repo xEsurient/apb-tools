@@ -9,12 +9,16 @@ on:
         description: 'Sync even if the APBDB version has not changed'
         type: boolean
         default: false
+      allow_older:
+        description: 'With force: also accept an APBDB version older than the held data (rolls numbers back)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 concurrency:
-  group: repo-data-commit
+  group: apbdb-sync
   cancel-in-progress: false
 
 jobs:
@@ -34,9 +38,10 @@ jobs:
         run: node .github/scripts/sync-apbdb.mjs
         env:
           FORCE_SYNC: ${{ inputs.force }}
+          ALLOW_OLDER: ${{ inputs.allow_older }}
       - name: Commit the updated data
         run: |
-          bash .github/scripts/data-commit.sh "Sync $(node -p "require('./designer/data.json').apbdb.version")" designer/data.json
+          bash .github/scripts/data-commit.sh "Sync $(node -p "const a = require('./designer/data.json').apbdb || {}; (a.version || a.partialOf || 'none') + (a.partialOf ? ' (partial)' : '')")" designer/data.json
         env:
           DATA_BRANCH: ${{ vars.DATA_BRANCH }}
           COMMIT_NAME: github-actions[bot]

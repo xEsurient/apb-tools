@@ -16,7 +16,7 @@
   #files tr.click{cursor:pointer}#files tr.click:hover td{background:rgba(255,255,255,.03)}
   #detail{max-height:65vh;overflow:auto}
   .st-added{color:var(--ok)}.st-duplicate-in-custom,.st-only-in-custom{color:var(--bad)}.st-same-text{color:var(--dim)}
-  td.warn{color:#ffcf66;font-weight:600}
+  td.warn,p.warn{color:#ffcf66;font-weight:600}
   td.v{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .info{font-size:12.5px;color:var(--dim)}
 </style></head>
@@ -33,7 +33,7 @@
       <label class="drop"><input type="file" id="refdir" webkitdirectory multiple>📁 <span>Choose the game folder <b>APBGame/Localization/INT</b></span></label>
       <label class="drop"><input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt">🗜 <span>…or a <b>zip</b> / single files</span></label>
       <label class="opt"><span class="switch on" data-cb="useapbdb"></span>Use <a href="https://apbdb.com" target="_blank" rel="noopener">APBDB</a> item names when the reference has no <code>InventoryItemTypes</code></label>
-      <label class="opt"><span class="switch on" data-cb="usesdd"></span>Add the lines the game defines but its INT files leave out (517 lines from the game's design data)</label>
+      <label class="opt"><span class="switch on" data-cb="usesdd"></span>Add the lines the game defines but its INT files leave out (from the game's design data)</label>
       <span id="refinfo" class="info">No reference chosen: only APBDB item names can be checked.</span></div></section>
     <section class="glass step"><h2><span class="num">2</span>Your config</h2><div class="pick">
       <label class="drop"><input type="file" id="cuszip" accept=".zip" multiple>🗜 <span>Choose your config <b>zip</b></span></label>

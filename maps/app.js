@@ -128,7 +128,7 @@ async function init() {
   $('#btop').onclick = () => V3.top(); $('#bover').onclick = () => V3.overview();
   setupSearch();
   await applyHash();
-  window.addEventListener('hashchange', () => /district=/.test(location.hash) && applyHash().catch(e => fail('Could not open that link: ' + e.message)));
+  window.addEventListener('hashchange', () => !S.geo && /district=/.test(location.hash) && applyHash().catch(e => fail('Could not open that link: ' + e.message)));
 }
 async function applyHash() {
   const sel = $('#district'), h = new URLSearchParams(location.hash.slice(1)), want = h.get('district'), names = [...sel.options].map(o => o.value);
@@ -302,7 +302,7 @@ function draw2dNow() {
 function pick2d(mx, my) {
   for (const [x, y, i] of (S.placed || []).slice().reverse()) if ((x - mx) ** 2 + (y - my) ** 2 < 14 ** 2) return i;
   for (const [x, y, i] of (S.smallPlaced || []).slice().reverse()) if ((x - mx) ** 2 + (y - my) ** 2 < 9 ** 2) return i;
-  let best = -1, bd = 7 * 7; const d = S.d;
+  let best = -1, bd = 7 * 7; const d = S.d; if (!d) return -1;
   for (let i = 0; i < d.x.length; i++) { if (!S.on[d.kind[i]] || S.layerOf[i] >= 0 || S.hid[i]) continue; const [x, y] = sxy(i), dd = (x - mx) ** 2 + (y - my) ** 2; if (dd < bd) { bd = dd; best = i; } }
   return best;
 }

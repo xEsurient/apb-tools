@@ -9,11 +9,24 @@ export function repairCrCrLf(bytes) {
   return { bytes: fixed ? out.slice(0, o) : bytes, fixed };
 }
 
+const CP437 = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0';
+const zipName = b => { try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return [...b].map(c => c < 0x80 ? String.fromCharCode(c) : CP437[c - 0x80]).join(''); } };
 const CP1252 = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
+function noBom16(b) {
+  const n = Math.min(b.length, 4096) & ~1; if (n < 4) return null; let ev = 0, od = 0;
+  for (let i = 0; i < n; i += 2) { if (b[i] === 0) ev++; if (b[i + 1] === 0) od++; }
+  const half = n / 2;
+  if (od > half * 0.4 && ev < half * 0.05) return 'utf-16le';
+  if (ev > half * 0.4 && od < half * 0.05) return 'utf-16be';
+  return null;
+}
+function dec16(bytes, enc, start) { const body = bytes.subarray(start), odd = body.length % 2; return { text: new TextDecoder(enc).decode(odd ? body.subarray(0, body.length - 1) : body), odd }; }
 export function decodeText(bytes) {
   const r = repairCrCrLf(bytes); bytes = r.bytes;
-  if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), enc: 'utf-16le', bom: true, fixed: r.fixed };
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), enc: 'utf-16be', bom: true, fixed: r.fixed };
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) { const d = dec16(bytes, 'utf-16le', 2); return { text: d.text, enc: 'utf-16le', bom: true, fixed: r.fixed, oddByte: d.odd }; }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) { const d = dec16(bytes, 'utf-16be', 2); return { text: d.text, enc: 'utf-16be', bom: true, fixed: r.fixed, oddByte: d.odd }; }
+  const nb = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? null : noBom16(bytes);
+  if (nb) { const d = dec16(bytes, nb, 0); return { text: d.text, enc: nb, bom: false, fixed: r.fixed, oddByte: d.odd }; }
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return { text: new TextDecoder('utf-8').decode(bytes.subarray(3)), enc: 'utf-8', bom: true, fixed: r.fixed };
   try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), enc: 'utf-8', bom: false, fixed: r.fixed }; }
   catch { return { text: new TextDecoder('windows-1252').decode(bytes), enc: 'cp1252', bom: false, fixed: r.fixed }; }
@@ -60,7 +73,7 @@ export async function readZip(buf) {
     if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('bad zip directory');
     const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
     const flags = dv.getUint16(p + 8, true), lho = dv.getUint32(p + 42, true);
-    const name = new TextDecoder(flags & 0x800 ? 'utf-8' : 'windows-1252').decode(b.subarray(p + 46, p + 46 + nl)).replace(/\\/g, '/');
+    const nb = b.subarray(p + 46, p + 46 + nl), name = (flags & 0x800 ? new TextDecoder('utf-8').decode(nb) : zipName(nb)).replace(/\\/g, '/');
     p += 46 + nl + xl + cl;
     if (name.endsWith('/')) continue;
     const ds = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true), raw = b.subarray(ds, ds + csize);
@@ -91,7 +104,7 @@ export async function readInputs(fileList) {
   const out = [];
   for (const f of fileList) {
     const buf = await f.arrayBuffer(), path = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
-    if (/\.zip$/i.test(f.name)) (await readZip(buf)).forEach(x => out.push(x));
+    if (/\.zip$/i.test(f.name) && !f.webkitRelativePath) (await readZip(buf)).forEach(x => out.push(x));
     else out.push({ name: path, data: new Uint8Array(buf) });
   }
   return out;

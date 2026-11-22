@@ -2,21 +2,24 @@ export const STATUS = ['added', 'duplicate-in-custom', 'only-in-custom', 'change
 
 function splitLines(text) { const out = []; const re = /[^\r\n]*(\r\n|\n|\r|$)/g; let m; while ((m = re.exec(text)) && m[0] !== '') out.push(m[0]); return out; }
 const body = l => l.replace(/[\r\n]+$/, '');
+const HDR = /^\[([^\]]*)\]\s*(?:[;#].*)?$/;
 
 export function parseIni(text) {
   const lines = splitLines(text), entries = []; let sec = '';
   lines.forEach((line, i) => {
     const s = line.trim(); if (!s || s.startsWith(';') || s.startsWith('//')) return;
-    if (s.startsWith('[') && s.endsWith(']')) { sec = s.slice(1, -1); return; }
+    const hm = HDR.exec(s); if (hm) { sec = hm[1]; return; }
     const eq = s.indexOf('='); if (eq >= 0) entries.push({ sec, key: s.slice(0, eq).trim(), val: s.slice(eq + 1), line: i });
   });
   return { lines, entries, eol: text.includes('\r\n') ? '\r\n' : '\n' };
 }
 function ids(entries) { const seen = new Map(); return entries.map(e => { const k = e.sec.toLowerCase() + '\u0000' + e.key.toLowerCase(), n = seen.get(k) || 0; seen.set(k, n + 1); return k + '\u0000' + n; }); }
 function sectionRanges(lines) {
-  const out = new Map(); let sec = '', start = -1;
-  lines.forEach((line, i) => { const s = line.trim(); if (s.startsWith('[') && s.endsWith(']')) { if (!out.has(sec.toLowerCase())) out.set(sec.toLowerCase(), [start, i - 1]); sec = s.slice(1, -1); start = i; } });
-  if (!out.has(sec.toLowerCase())) out.set(sec.toLowerCase(), [start, lines.length - 1]);
+  const out = new Map(), all = new Map(); let sec = '', start = -1;
+  const add = (end) => { const k = sec.toLowerCase(); if (!out.has(k)) out.set(k, [start, end]); if (!all.has(k)) all.set(k, []); all.get(k).push([start, end]); };
+  lines.forEach((line, i) => { const hm = HDR.exec(line.trim()); if (hm) { add(i - 1); sec = hm[1]; start = i; } });
+  add(lines.length - 1);
+  out.all = all;
   return out;
 }
 function lastContent(lines, a, b) { for (let i = b; i > a; i--) if (lines[i].trim()) return i; return a; }
@@ -25,7 +28,7 @@ export function compare(refText, cusText, refName = 'reference', mark = false) {
   const R = parseIni(refText), C = parseIni(cusText);
   if (!R.entries.length && !C.entries.length) return { kind: 'text', rows: [], merged: null, added: 0, sectionsAdded: [] };
   const rid = ids(R.entries), cid = ids(C.entries), cpos = new Map(cid.map((k, i) => [k, C.entries[i]])), rpos = new Map(rid.map((k, i) => [k, R.entries[i]]));
-  const rows = [], addedRows = [], sectionsAdded = [], rkeys = new Set(rid.map(k => k.split('\u0000').slice(0, 2).join('\u0000')));
+  const rows = [], addedRows = [], sectionsAdded = [], baseOf = k => k.split('\u0000').slice(0, 2).join('\u0000'), rkeys = new Set(rid.map(baseOf)), ckeys = new Set(cid.map(baseOf));
   rid.forEach((k, i) => { const e = R.entries[i], c = cpos.get(k); if (c) rows.push([c.val === e.val ? 'same-text' : 'changed', e.sec, e.key, e.line + 1, c.line + 1, e.val, c.val]); });
   cid.forEach((k, i) => { if (!rpos.has(k)) { const e = C.entries[i]; rows.push([rkeys.has(k.split('\u0000').slice(0, 2).join('\u0000')) ? 'duplicate-in-custom' : 'only-in-custom', e.sec, e.key, '', e.line + 1, '', e.val]); } });
   const ins = new Map(), put = (a, x) => { if (!ins.has(a)) ins.set(a, []); ins.get(a).push(x); };
@@ -39,6 +42,7 @@ export function compare(refText, cusText, refName = 'reference', mark = false) {
       let prev = null;
       for (const [k, e] of ents) {
         if (cpos.has(k)) { prev = cpos.get(k).line; continue; }
+        if (ckeys.has(baseOf(k))) continue;
         const a = prev !== null ? prev : cr.has(s) ? cr.get(s)[0] : -1, blk = ins.get(a);
         if (mark && !(blk && blk[blk.length - 1][1] === 'entry')) put(a, ['; added from ' + refName, 'mark']);
         put(a, [body(R.lines[e.line]), 'entry']); addedRows.push(['added', e.sec, e.key, e.line + 1, '', e.val, '']);
@@ -48,16 +52,16 @@ export function compare(refText, cusText, refName = 'reference', mark = false) {
       let a;
       if (prevSec !== undefined) a = lastContent(C.lines, ...cr.get(prevSec));
       else { const nxt = order.slice(si + 1).find(p => cr.has(p) && cr.get(p)[0] >= 0); a = nxt !== undefined ? cr.get(nxt)[0] - 1 : C.lines.length - 1; }
-      const [h, end] = rr.get(s);
+      const [h] = rr.get(s);
       if (a >= 0) put(a, ['', 'blank']);
       if (mark) put(a, ['; section added from ' + refName, 'mark']);
-      for (let i = h; i <= lastContent(R.lines, h, end); i++) put(a, [body(R.lines[i]), 'section']);
+      (rr.all.get(s) || [rr.get(s)]).forEach(([h2, end2], j) => { if (j) put(a, ['', 'blank']); for (let i = h2; i <= lastContent(R.lines, h2, end2); i++) put(a, [body(R.lines[i]), 'section']); });
       if (a < 0 && C.lines.length) put(a, ['', 'blank']);
-      sectionsAdded.push(h >= 0 ? R.lines[h].trim().slice(1, -1) : '');
+      sectionsAdded.push(h >= 0 ? (HDR.exec(R.lines[h].trim()) || [, ''])[1] : '');
       for (const [, e] of ents) addedRows.push(['added', e.sec, e.key, e.line + 1, '', e.val, '']);
     }
   });
-  let cl = C.lines.slice(); const eol = C.eol;
+  let cl = C.lines.slice(); const eol = C.lines.some(l => /[\r\n]$/.test(l)) ? C.eol : R.eol;
   if (cl.length && !/[\r\n]$/.test(cl[cl.length - 1]) && ins.has(cl.length - 1)) cl[cl.length - 1] += eol;
   const out = []; (ins.get(-1) || []).forEach(([t]) => out.push(t + eol));
   cl.forEach((line, i) => { out.push(line); (ins.get(i) || []).forEach(([t]) => out.push(t + eol)); });

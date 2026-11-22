@@ -1,7 +1,7 @@
 import { h } from './core.js';
 import { decodeText, readInputs } from '../config/lib.js';
 
-const RE = /(^|\/)APBGame\/Localization\/(INT|GER)\/([^/]+)$/i, LOOSE = /(^|\/)([^/]+)\.(int|ger)$/i;
+const RE = /(^|\/)(?:(?:APBGame\/)?Localization\/)?(INT|GER)\/([^/]+\.(?:int|ger))$/i, RE_FULL = /(^|\/)APBGame\/Localization\/(INT|GER)\/([^/]+)$/i, LOOSE = /(^|\/)([^/]+)\.(int|ger)$/i;
 export const LOC = { files: [], root: '', zip: '', listeners: [] };
 let DIR = [], ZIP = [];
 const CACHE = new Map();
@@ -10,7 +10,7 @@ const entry = (path, lang, name, extra) => ({ lang: lang.toUpperCase(), name, st
 export function locFrom(list) {
   const out = [];
   for (const f of list) {
-    const path = (f.webkitRelativePath || f.name).replace(/\\/g, '/'), m = RE.exec(path);
+    const path = (f.webkitRelativePath || f.name).replace(/\\/g, '/'), m = RE_FULL.exec(path) || RE.exec(path);
     if (m) out.push(entry(path, m[2], m[3], { file: f, src: 'folder' }));
   }
   return out;
@@ -46,14 +46,18 @@ export function findLoc(stem, langs = ['GER', 'INT']) {
   return null;
 }
 export async function readLoc(x) { return { name: x.name, lang: x.lang, path: x.path, ...decodeText(x.data || new Uint8Array(await x.file.arrayBuffer())) }; }
+export const secKey = (sec, key) => String(sec || '').trim().toLowerCase() + '\u0000' + String(key).trim().toLowerCase();
 export function parseLoc(text) {
-  const out = new Map();
+  const out = new Map(), bySec = new Map(), secs = new Set(); let sec = '';
   for (const l of text.split(/\r\n|\n|\r/)) {
-    const s = l.trim(); if (!s || s.startsWith(';') || s.startsWith('[')) continue;
+    const s = l.trim(); if (!s || s.startsWith(';')) continue;
+    if (s.startsWith('[') && s.includes(']')) { sec = s.slice(1, s.indexOf(']')); secs.add(sec.trim().toLowerCase()); continue; }
     const eq = l.indexOf('='); if (eq <= 0) continue;
     let v = l.slice(eq + 1); if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
-    out.set(l.slice(0, eq).trim(), v);
+    out.set(l.slice(0, eq).trim(), v); bySec.set(secKey(sec, l.slice(0, eq)), v);
   }
+  out.bySec = bySec; out.secs = secs;
+  out.lookup = (key, sec) => { if (sec !== undefined && secs.has(String(sec).trim().toLowerCase())) { const k = secKey(sec, key); return bySec.has(k) ? { v: bySec.get(k) } : null; } const k = String(key).trim(); return out.has(k) ? { v: out.get(k) } : null; };
   return out;
 }
 export const hasConfig = () => LOC.files.length > 0;
@@ -62,7 +66,7 @@ export function inGame(stem) {
   if (!CACHE.has(k)) CACHE.set(k, (async () => {
     const int = findLoc(k, ['INT']), ger = findLoc(k, ['GER']);
     const base = int ? parseLoc((await readLoc(int)).text) : new Map(), own = ger ? parseLoc((await readLoc(ger)).text) : new Map();
-    return { base, own, value: key => own.has(key) ? own.get(key) : base.get(key), has: !!(int || ger), own_: !!ger };
+    return { base, own, value: (key, sec) => { const a = own.lookup(key, sec); if (a) return a.v; const b = base.lookup(key, sec); return b ? b.v : undefined; }, has: !!(int || ger), own_: !!ger };
   })());
   return CACHE.get(k);
 }

@@ -76,7 +76,7 @@ function openGen(g) {
   refresh();
 }
 let ITEMS = [];
-function refresh() { const s = S[current.id]; ITEMS = current.items(D, s); preview(); const ch = ITEMS.filter(x => x.value !== undefined).length; $('#outinfo').textContent = `${ch} line${ch === 1 ? '' : 's'} to write.`; }
+function refresh() { $$('#genbox .edreview').forEach(e => e.remove()); const s = S[current.id]; ITEMS = current.items(D, s); preview(); const ch = ITEMS.filter(x => x.value !== undefined).length; $('#outinfo').textContent = `${ch} line${ch === 1 ? '' : 's'} to write.`; }
 let MINE = null;
 onFolder(() => { const l = $('#genmine-l'); if (l) { l.hidden = !hasConfig(); $('#genmine').checked = hasConfig(); } if (current) { MINE = null; preview(); } });
 function preview() {
@@ -92,7 +92,7 @@ function preview() {
       x.child ? null : h('div', { class: 'tiphead' + (x.icon ? ' withicon' : '') }, x.icon ? h('span', { html: iconSpan(x.icon, 40, 'tipicon') }) : null, h('div', {}, h('b', { html: render(x.name) }), h('span', { class: 'hint' }, x.sub))),
       x.child ? h('div', { class: 'hint' }, x.sub) : null,
       h('div', { class: 'tipbody' + (changed ? '' : ' same'), html: render(changed ? x.value : x.orig) || '<span class="hint">(empty)</span>' }),
-      showMine && MINE ? (v => h('div', { class: 'tipbody mine' + (v === undefined ? ' none' : ''), title: 'Your in-game text', html: v === undefined ? '<span class="hint">(not in your files: the game shows its default)</span>' : render(v) || '<span class="hint">(empty)</span>' }))(MINE.value(x.key)) : null,
+      showMine && MINE ? (v => h('div', { class: 'tipbody mine' + (v === undefined ? ' none' : ''), title: 'Your in-game text', html: v === undefined ? '<span class="hint">(not in your files: the game shows its default)</span>' : render(v) || '<span class="hint">(empty)</span>' }))(MINE.value(x.key, x.section || current.file)) : null,
       showOrig && changed ? h('div', { class: 'tipbody orig', html: render(x.orig) }) : null,
       h('code', { class: 'key', title: changed ? x.value : 'unchanged' }, x.key, changed ? '' : '  · unchanged')));
   }
@@ -110,7 +110,7 @@ async function out(g, name) {
   const conv = bad.length && was !== file.enc ? ` Saved as UTF-16: the new lines use characters an 8-bit file cannot hold (${bad.slice(0, 8).join(' ')}).` : '';
   const fn = name || g.file + '.GER';
   $$('#genbox .edreview').forEach(e => e.remove());
-  $('#genbox .out').after(changeReview({ files: [{ name: fn, base: base && base.text, lines: lines.map(([k, v]) => [k, v]), conv: conv.trim() }],
+  $('#genbox .out').after(changeReview({ files: [{ name: fn, base: base && base.text, lines: lines.map(([k, v, sct]) => [k, v, sct || g.file]), conv: conv.trim() }],
     note: base ? `Merging into ${base.name || base.path}: lines that are not listed stay as they are.` : 'New file with only these lines.',
     onDownload: () => { saveFile(file, fn); $('#outinfo').textContent = (base ? `Saved ${fn}: ${rep} lines replaced, ${add} added.` : `Saved ${fn}: ${add} lines.`) + conv; } }));
 }

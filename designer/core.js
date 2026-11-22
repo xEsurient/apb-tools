@@ -165,19 +165,20 @@ export function buildFile(section, lines, base) {
   return { text, enc: e.enc, bom: e.bom, bad: e.bad, replaced, added: rest.length, orig: base.orig ?? base.text };
 }
 function keyVals(text) {
-  const m = new Map();
+  const m = new Map(); let sec = '';
   for (const l of String(text || '').split(/\r\n|\n|\r/)) {
-    const t = l.trim(); if (!t || t.startsWith(';') || t.startsWith('[')) continue;
+    const t = l.trim(); if (!t || t.startsWith(';')) continue;
+    if (t.startsWith('[') && t.includes(']')) { sec = t.slice(1, t.indexOf(']')).trim().toLowerCase(); continue; }
     const eq = l.indexOf('='); if (eq <= 0) continue;
     let v = l.slice(eq + 1); if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
-    const k = l.slice(0, eq).trim().toLowerCase(); if (!m.has(k)) m.set(k, v);
+    const k = sec + '\u0000' + l.slice(0, eq).trim().toLowerCase(); if (!m.has(k)) m.set(k, v);
   }
   return m;
 }
 export function changeReview({ title, files, note, onDownload, onCancel }) {
   const MAX = 150, box = h('div', { class: 'card glass edreview' });
   const parts = files.map(f => {
-    const old = keyVals(f.base), rows = f.lines.map(([k, v]) => { const o = old.get(k.toLowerCase()); return { k, o, v, st: o === undefined ? 'new' : o === v ? 'same' : 'changed' }; });
+    const old = keyVals(f.base), rows = f.lines.map(([k, v, sc]) => { const o = old.get(String(sc || '').trim().toLowerCase() + '\u0000' + k.trim().toLowerCase()); return { k, o, v, st: o === undefined ? 'new' : o === v ? 'same' : 'changed' }; });
     const n = st => rows.filter(r => r.st === st).length, ch = rows.filter(r => r.st !== 'same');
     const tbl = h('table', { class: 'grid ed edchanges' }, h('thead', {}, h('tr', {}, h('th', {}, 'Key'), h('th', {}, 'Before'), h('th', {}, 'After'))),
       h('tbody', {}, ch.slice(0, MAX).map(r => h('tr', {}, h('td', { class: 'k' }, r.k), h('td', {}, r.o === undefined ? h('span', { class: 'hint' }, '(new line)') : h('code', {}, r.o)), h('td', {}, h('code', {}, r.v))))));
