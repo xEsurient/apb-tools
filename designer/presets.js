@@ -1,4 +1,4 @@
-import { $, h, render, seg, toggle, colourPick, colourText, hex2rgb, rgb2hex, apbTag, FONTS, store, buildFile, named, namedRgb, nearestNamed, namedSelect } from './core.js';
+import { $, h, render, seg, toggle, colourPick, colourText, hex2rgb, rgb2hex, apbTag, FONTS, store, buildFile, changeReview, named, namedRgb, nearestNamed, namedSelect } from './core.js';
 import { GENS, stripTags } from './gen.js';
 import { categoryFiles } from './categories.js';
 import { imagePicker, imageTag } from './imgpick.js';
@@ -300,7 +300,7 @@ export async function initPresets(root, D) {
       LOC.files.length ? toggle('Files without a GER copy start from the game\'s full English (INT) file (copies every line: later game updates to those lines will not show)', st.fromInt, v => { st.fromInt = v; save(); }) : null,
       h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Extension'), seg([['GER', '.GER'], ['INT', '.INT']], st.ext, v => { st.ext = v; save(); }),
         h('button', { class: 'primary', onclick: async () => {
-          const files = build(), zip = [], report = [];
+          const files = build(), zip = [], report = [], rv = [];
           for (const [f, ls] of Object.entries(files)) {
             if (!ls.length) continue;
             const same = userFiles ? userFiles.filter(x => x.name.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase() === f.toLowerCase()) : [];
@@ -311,10 +311,13 @@ export async function initPresets(root, D) {
             let cur = base, r;
             for (const [sc, l] of bySec) { r = buildFile(sc, l, cur); cur = { text: r.text, enc: r.enc, bom: r.bom }; }
             const path = mine ? mine.name : dir && dir.lang === 'GER' ? dir.path : `APBGame/Localization/GER/${f}.${st.ext}`;
-            zip.push({ name: path, data: encodeText(cur.text, cur.enc || 'utf-16le', cur.bom !== false) }); report.push(`${f}: ${ls.length} lines${base && cur.enc === 'utf-16le' && base.enc !== 'utf-16le' ? ' (saved as UTF-16: 8-bit file could not hold the new characters)' : ''}`);
+            zip.push({ name: path, data: encodeText(cur.text, cur.enc || 'utf-16le', cur.bom !== false) }); const conv = base && cur.enc === 'utf-16le' && base.enc !== 'utf-16le' ? 'saved as UTF-16: the 8-bit file could not hold the new characters' : '';
+            report.push(`${f}: ${ls.length} lines${conv ? ` (${conv})` : ''}`); rv.push({ name: path, base: base && base.text, lines: ls.map(([k, v]) => [k, v]), conv });
           }
           if (!zip.length) { msg.textContent = 'Nothing to write: every choice is the game default.'; return; }
-          download(await writeZip(zip), 'APB-preset-config.zip'); msg.textContent = 'Saved: ' + report.join(' · ');
+          const blob = await writeZip(zip);
+          body.querySelectorAll('.edreview').forEach(e => e.remove());
+          out.after(changeReview({ files: rv, note: 'Each file in the zip: lines that are not listed stay as they are in your file.', onDownload: () => { download(blob, 'APB-preset-config.zip'); msg.textContent = 'Saved: ' + report.join(' · '); } }));
         } }, 'Download zip')), msg);
 
     const credits = h('p', { class: 'hint' }, 'Styles recreated from: ', P.credits.map((c, i) => h('span', {}, i ? ' · ' : '', h('b', {}, c.name), ` (${c.what}${c.with ? '; with ' + c.with : ''})`)), '. No files from these packs are included; every line is built from the game\'s own text and data.');

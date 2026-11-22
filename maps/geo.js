@@ -166,7 +166,7 @@ const hooks = {
 };
 
 const EYE = 170, ray = new THREE.Raycaster(), rv = new THREE.Vector3(), rd = new THREE.Vector3();
-const solids = () => V3.groups.filter(g => g.isInstancedMesh && g.visible);
+const solids = () => V3.groups.filter(g => g.isInstancedMesh);
 function tryStep(p, dx, dz) {
   const len = Math.hypot(dx, dz); if (len < 1e-6) return null;
   const objs = solids(), eye = p.y;
@@ -228,7 +228,8 @@ function leave() {
   A.applySeason(); A.seasonPanel(); V3.applyMarkers(); V3.missionSprites(); V3.dirty = true; A.setHash(); A.draw2d();
 }
 async function quit() {
-  if (T && T.view !== 'done' && T.res.length && !(await ask('<b>Leave this game?</b><p class="dim" style="margin:8px 0 0">Your score so far is not saved.</p>', 'Leave', 'Keep playing'))) return;
+  const kept = T && T.kind === 'daily' && !T.replay;
+  if (T && T.view !== 'done' && T.res.length && !(await ask(kept ? '<b>Leave today\'s challenge?</b><p class="dim" style="margin:8px 0 0">Your guesses so far already count as today\'s result. You can finish the other rounds later from the GeoGuesser menu.</p>' : '<b>Leave this game?</b><p class="dim" style="margin:8px 0 0">Your score so far is not saved.</p>', 'Leave', 'Keep playing'))) return;
   const toMode = S.mode; leave(); if (toMode === '3d') V3.overview();
 }
 
@@ -236,7 +237,17 @@ async function start(def) {
   try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
   if (!def.spots.length) { A.fail('No spots match these settings.'); return; }
   T = { ...def, round: 0, res: [], view: 'load' };
-  card(''); enter(); await round(0);
+  if (T.kind === 'daily') {
+    const dr = store.get().daily?.[T.date];
+    if (dr && !dr.open) T.replay = true;
+    else if (dr && dr.open && Array.isArray(dr.res)) {
+      T.st = { ...T.st, h: dr.h ? 1 : 0 };
+      T.res = dr.res.slice(0, T.st.r).map(a => ({ g: Number.isFinite(a[3]) && Number.isFinite(a[4]) ? [a[3] * 10, a[4] * 10] : null, cap: Number.isFinite(a[5]) ? a[5] : MAXP, pts: +a[0] || 0, m: a[1], moved: !!a[2], secs: 0 }));
+    }
+  }
+  card(''); enter();
+  if (T.res.length >= T.st.r) { T.round = T.st.r - 1; T.sp = T.spots[T.round]; T.view = 'done'; await finish(); return; }
+  await round(T.res.length);
 }
 async function round(k) {
   closeAsk(); T.round = k; T.sp = T.spots[k]; T.pin = null; T.moved = 0; T.moveOk = false; T.edge = false; T.fitted = false; T.view = 'load';
@@ -269,6 +280,7 @@ async function confirmGuess(force) {
   closeAsk(); clearInterval(timer);
   const sp = T.sp, cap = capOf(T.moved), g = T.pin, pts = points(sp, g, cap), m = g ? away(sp, g) / 100 : null;
   T.res[T.round] = { g, cap, pts, m, moved: T.moved > 100, secs: T.st.t ? Math.round(T.st.t - Math.max(0, T.deadline - performance.now()) / 1000) : 0 };
+  if (T.kind === 'daily' && !T.replay) saveDaily(true);
   T.view = 'reveal'; hint(''); bar();
   const xs = [sp.x], ys = [sp.y]; if (g) { xs.push(g[0]); ys.push(g[1]); }
   for (const p of T.others) { const q = p[1][T.round]; if (q) { xs.push(q[0] * 10); ys.push(q[1] * 10); } }
@@ -298,14 +310,22 @@ async function next() {
   T.view = 'done'; $('#georeveal').style.display = 'none'; hint(''); await finish();
 }
 
+function saveDaily(open) {
+  upd(o => {
+    o.daily = o.daily || {};
+    o.daily[T.date] = { h: T.st.h, maps: mapsOf(T), total: total(), res: T.res.map(r => [r.pts, r.m == null ? null : Math.round(r.m), r.moved ? 1 : 0, r.g ? Math.round(r.g[0] / 10) : null, r.g ? Math.round(r.g[1] / 10) : null, r.cap]) };
+    if (open) o.daily[T.date].open = 1;
+    const ks = Object.keys(o.daily).sort(); for (const k of ks.slice(0, -60)) delete o.daily[k];
+  });
+}
 const setKey = st => `${st.d}|${st.r}|m${st.m}|h${st.h}|t${st.t}|${[...st.ty].sort().join(',')}`;
 async function finish() {
   const tot = total(), max = T.st.r * MAXP, key = setKey(T.st); let best = 0, firstDaily = false;
   upd(o => {
     o.best = o.best || {};
-    if (T.kind !== 'daily') { best = o.best[key] || 0; if (tot > best) o.best[key] = tot; }
-    if (T.kind === 'daily') { o.daily = o.daily || {}; if (!o.daily[T.date]) { firstDaily = true; o.daily[T.date] = { h: T.st.h, maps: mapsOf(T), total: tot, res: T.res.map(r => [r.pts, r.m == null ? null : Math.round(r.m), r.moved ? 1 : 0]) }; } const ks = Object.keys(o.daily).sort(); for (const k of ks.slice(0, -60)) delete o.daily[k]; }
+    if (T.kind !== 'daily' && !T.noBest) { best = o.best[key] || 0; if (tot > best) o.best[key] = tot; }
   });
+  if (T.kind === 'daily' && !T.replay) { firstDaily = true; saveDaily(false); }
   let board = null;
   if (T.kind === 'challenge') {
     const me = [T.name, T.res.map(r => r.g ? [Math.round(r.g[0] / 10), Math.round(r.g[1] / 10), r.cap, r.secs] : 0)];
@@ -315,22 +335,23 @@ async function finish() {
   if (S.mode === '3d') await A.setMode('2d');
   A.fit2d(); A.draw2d();
   const rows = T.res.map((r, k) => `<tr><td>${k + 1}</td><td>${esc(DNAME[T.spots[k].d])}</td><td class="r">${r.m == null ? '–' : dist(r.m)}</td><td class="r">${r.moved ? '🚶 ' : ''}${nf(r.pts)}</td></tr>`).join('');
-  const title = T.kind === 'daily' ? `Daily · ${T.date}` : T.kind === 'challenge' ? 'Challenge' : 'Game over';
+  const title = T.kind === 'daily' ? `Daily · ${T.date}` : T.kind === 'challenge' ? 'Challenge' : T.noBest ? `Daily · ${T.date} (replay)` : 'Game over';
   card(`<h2>${esc(title)}</h2><div class="dim">${esc(mapsOf(T))} · ${T.st.r} rounds${T.st.h ? ' · hard mode' : ''}</div>
     <div class="big">${nf(tot)} <span class="dim" style="font-size:16px;font-weight:500">/ ${nf(max)}</span></div><div class="sq">${T.res.map(r => square(r.g ? r.pts : null)).join('')}</div>
     <table><tr><th>#</th><th>Map</th><th class="r">Distance</th><th class="r">Points</th></tr>${rows}</table>
     ${T.kind === 'daily' ? `<p class="hint">${firstDaily ? 'Saved as your result for today.' : 'You already played today\'s challenge: this replay is not saved.'} A new challenge starts at 00:00 UTC.</p>` : ''}
-    ${T.kind === 'free' ? `<p class="hint">${tot > best ? (best ? `New best for these settings (was ${nf(best)}).` : 'First score for these settings.') : `Best for these settings: ${nf(best)}.`}</p>` : ''}
+    ${T.kind === 'free' && T.noBest ? '<p class="hint">An earlier day\'s challenge, played for fun: not saved.</p>' : ''}
+    ${T.kind === 'free' && !T.noBest ? `<p class="hint">${tot > best ? (best ? `New best for these settings (was ${nf(best)}).` : 'First score for these settings.') : `Best for these settings: ${nf(best)}.`}</p>` : ''}
     ${board ? `<h4>Scoreboard</h4><table>${board.map(([p, t], i) => `<tr class="${p === T.me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(p[0])}</td><td class="r">${nf(t)}</td></tr>`).join('')}${board.extra ? `<tr class="me"><td>–</td><td>${esc(board.extra[0][0])} <span class="dim">(this game, your best counts)</span></td><td class="r">${nf(board.extra[1])}</td></tr>` : ''}</table><p class="hint">Players who opened other copies of the link show up here once you open their links too.</p>` : ''}
     ${T.kind !== 'daily' ? `<div class="opt" style="margin-top:10px"><span>Your name on the scoreboard</span><input type="text" id="gname" maxlength="16" value="${esc(T.name || store.get().name || '')}" placeholder="Name"></div>` : ''}
     <div class="btns"><button class="primary" id="gshare">Copy result</button>${T.kind !== 'daily' ? `<button id="gch">${T.kind === 'challenge' ? 'Pass it on' : 'Challenge friends'}</button>` : ''}</div>
-    <div class="btns" style="margin-top:8px"><button id="gagain">${T.kind === 'free' ? 'Play again' : 'New game'}</button><button id="gclose">Close</button></div>
+    <div class="btns" style="margin-top:8px"><button id="gagain">${T.kind === 'free' && !T.noBest ? 'Play again' : 'New game'}</button><button id="gclose">Close</button></div>
     <p class="hint">Copy result copies a line with your score and a link. Challenge links carry every player's guesses, so friends take turns: each one plays and passes the new link on.</p>`);
   const nameIn = $('#gname');
   if (nameIn) nameIn.oninput = () => { const v = nameIn.value.trim().slice(0, 16); upd(o => { o.name = v; }); };
   $('#gshare').onclick = async () => copy(await shareLine(), $('#gshare'));
   if ($('#gch')) $('#gch').onclick = async () => copy(await challengeLink(), $('#gch'));
-  $('#gagain').onclick = () => { const st = T.st; leave(); if (T === null) setup('free', st); };
+  $('#gagain').onclick = () => { const own = T.kind === 'free' && !T.noBest, st = T.st; leave(); if (T === null) setup('free', own ? st : undefined); };
   $('#gclose').onclick = () => leave();
 }
 async function challengeLink() {
@@ -368,7 +389,7 @@ async function dailyDef(date, hard) {
 async function setup(tab, keep) {
   try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
   const o = store.get(), st = { ...DEF, ...(o.set || {}), ...(keep || {}) }; st.ty = (Array.isArray(st.ty) ? st.ty : DEF.ty).filter(t => Object.hasOwn(TNAME, t)); if (st.d !== 'all' && !GEO.ok[st.d]) st.d = 'all';
-  const avail = DLIST.filter(n => GEO.ok[n]), date = today(), dres = o.daily?.[date]; let dh = o.dailyHard ? 1 : 0;
+  const avail = DLIST.filter(n => GEO.ok[n]), date = today(), dres = o.daily?.[date], dopen = !!(dres && dres.open); let dh = dopen ? (dres.h ? 1 : 0) : o.dailyHard ? 1 : 0;
   const sw = (id, on) => `<span class="switch ${on ? 'on' : ''}" id="${id}" role="switch" tabindex="0" aria-checked="${on}"></span>`;
   const counts = () => { const P = pools(st); return Object.values(P).reduce((a, p) => a + p.length, 0); };
   card(`<h2>GeoGuesser</h2><div class="dim">You are dropped somewhere in San Paro. Look around, then find the spot on the map.</div>
@@ -378,9 +399,9 @@ async function setup(tab, keep) {
     const el = $('#gtab');
     if (tab === 'daily') {
       el.innerHTML = `<h4>${esc(date)} (UTC)</h4><div class="dim">5 rounds on two of the six maps, the same spots for everyone today. Walking allowed.</div>
-        ${dres ? `<p>Your result: <b>${nf(dres.total)}</b> / 25,000 ${dres.res.map(r => square(r[1] == null ? null : r[0]) + (r[2] ? '🚶' : '')).join('')}${dres.h ? ' 🔒' : ''}</p>` : ''}
-        <div class="opt"><span>Hard mode<br><span class="hint">no labels or icons on the guessing map</span></span>${sw('ghard', dh)}</div>
-        <div class="btns"><button class="primary" id="gstart">${dres ? 'Play again (not saved)' : 'Play today\'s challenge'}</button>${dres ? '<button id="gdshare">Copy result</button>' : ''}<button id="gcancel">Close</button></div>`;
+        ${dres ? `<p>${dopen ? `In progress, round ${dres.res.length + 1} of 5 next:` : 'Your result:'} <b>${nf(dres.total)}</b> / 25,000 ${dres.res.map(r => square(r[1] == null ? null : r[0]) + (r[2] ? '🚶' : '')).join('')}${dres.h ? ' 🔒' : ''}</p>` : ''}
+        ${dopen ? `<p class="hint">Your first guesses count, so this continues where you left off${dres.h ? ' (in hard mode)' : ''}.</p>` : `<div class="opt"><span>Hard mode<br><span class="hint">no labels or icons on the guessing map</span></span>${sw('ghard', dh)}</div>`}
+        <div class="btns"><button class="primary" id="gstart">${dopen ? 'Continue today\'s challenge' : dres ? 'Play again (not saved)' : 'Play today\'s challenge'}</button>${dres && !dopen ? '<button id="gdshare">Copy result</button>' : ''}<button id="gcancel">Close</button></div>`;
     } else {
       el.innerHTML = `<h4>Settings</h4>
         <div class="opt"><span>Map</span><select id="gd"><option value="all">Mixed (2 maps per game)</option>${avail.map(n => `<option value="${n}" ${st.d === n ? 'selected' : ''}>${DNAME[n]}</option>`).join('')}</select></div>
@@ -396,7 +417,7 @@ async function setup(tab, keep) {
       const tg = $('#gm'); tg.onclick = () => { st.m = st.m ? 0 : 1; tg.classList.toggle('on', !!st.m); save(); };
       el.querySelectorAll('.types input').forEach(c => c.onchange = () => { st.ty = [...el.querySelectorAll('.types input:checked')].map(x => x.value); save(); });
     }
-    const hd = $('#ghard'); hd.onclick = () => { if (tab === 'daily') { dh = dh ? 0 : 1; hd.classList.toggle('on', !!dh); upd(x => { x.dailyHard = dh; }); } else { st.h = st.h ? 0 : 1; hd.classList.toggle('on', !!st.h); save(); } };
+    const hd = $('#ghard'); if (hd) hd.onclick = () => { if (tab === 'daily') { dh = dh ? 0 : 1; hd.classList.toggle('on', !!dh); upd(x => { x.dailyHard = dh; }); } else { st.h = st.h ? 0 : 1; hd.classList.toggle('on', !!st.h); save(); } };
     el.querySelectorAll('.switch').forEach(x => x.onkeydown = e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); x.click(); } });
     $('#gcancel').onclick = () => card('');
     if ($('#gdshare')) $('#gdshare').onclick = () => copy(`APB GeoGuesser · Daily ${date} · ${dres.maps || 'Mixed maps'} · ${nf(dres.total)} / 25,000 ${dres.res.map(r => square(r[1] == null ? null : r[0]) + (r[2] ? '🚶' : '')).join('')}${dres.h ? ' 🔒' : ''} ${baseUrl()}#geo=daily-${date}`, $('#gdshare'));
@@ -437,7 +458,7 @@ async function fromHash(h) {
     try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
     card(`<h2>Daily challenge · ${esc(d)}</h2><div class="dim">This link is for an earlier day. You can play that day's spots for fun (not saved), or today's challenge.</div>
       <div class="btns"><button class="primary" id="gold">Play ${esc(d)}</button><button id="gnow">Today's challenge</button><button id="gcancel">Close</button></div>`);
-    $('#gold').onclick = async () => { const def = await dailyDef(d, 0); def.kind = 'free'; def.name = store.get().name || ''; start(def); };
+    $('#gold').onclick = async () => { const def = await dailyDef(d, 0); def.kind = 'free'; def.noBest = true; def.name = store.get().name || ''; start(def); };
     $('#gnow').onclick = () => setup('daily'); $('#gcancel').onclick = () => card('');
     return;
   }
@@ -451,7 +472,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'enter') { if (T.view === 'map' && T.pin) { e.preventDefault(); confirmGuess(); } else if (T.view === 'reveal' || T.view === 'look') { e.preventDefault(); next(); } }
   else if (k === 'escape' && T.view === 'map') toStreet();
 });
-$('#geobtn').onclick = () => setup(store.get().daily?.[today()] ? 'free' : 'daily');
+$('#geobtn').onclick = () => { const d = store.get().daily?.[today()]; setup(d && !d.open ? 'free' : 'daily'); };
 window.addEventListener('hashchange', fromHash);
 A.ready.then(() => { if (S.index) fromHash(firstHash); });
 window.APB.geo = { get T() { return T; }, makeSpots, dailyDef, points, capOf, pack, unpack, checkChallenge, geoData, setup, start };

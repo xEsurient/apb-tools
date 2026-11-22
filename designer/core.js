@@ -164,6 +164,32 @@ export function buildFile(section, lines, base) {
   const text = out.join(base.text.includes('\r\n') || !base.text.includes('\n') ? eol : '\n') + eol, e = fitEnc(text, base.enc, base.bom, base.orig ?? base.text);
   return { text, enc: e.enc, bom: e.bom, bad: e.bad, replaced, added: rest.length, orig: base.orig ?? base.text };
 }
+function keyVals(text) {
+  const m = new Map();
+  for (const l of String(text || '').split(/\r\n|\n|\r/)) {
+    const t = l.trim(); if (!t || t.startsWith(';') || t.startsWith('[')) continue;
+    const eq = l.indexOf('='); if (eq <= 0) continue;
+    let v = l.slice(eq + 1); if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+    const k = l.slice(0, eq).trim().toLowerCase(); if (!m.has(k)) m.set(k, v);
+  }
+  return m;
+}
+export function changeReview({ title, files, note, onDownload, onCancel }) {
+  const MAX = 150, box = h('div', { class: 'card glass edreview' });
+  const parts = files.map(f => {
+    const old = keyVals(f.base), rows = f.lines.map(([k, v]) => { const o = old.get(k.toLowerCase()); return { k, o, v, st: o === undefined ? 'new' : o === v ? 'same' : 'changed' }; });
+    const n = st => rows.filter(r => r.st === st).length, ch = rows.filter(r => r.st !== 'same');
+    const tbl = h('table', { class: 'grid ed edchanges' }, h('thead', {}, h('tr', {}, h('th', {}, 'Key'), h('th', {}, 'Before'), h('th', {}, 'After'))),
+      h('tbody', {}, ch.slice(0, MAX).map(r => h('tr', {}, h('td', { class: 'k' }, r.k), h('td', {}, r.o === undefined ? h('span', { class: 'hint' }, '(new line)') : h('code', {}, r.o)), h('td', {}, h('code', {}, r.v))))));
+    const sum = `${f.name}: ${n('changed')} changed, ${n('new')} new${n('same') ? `, ${n('same')} already the same` : ''}${f.base ? '' : ' (new file)'}${f.conv ? ' · ' + f.conv : ''}`;
+    return { ch: ch.length, el: h('details', { open: files.length === 1 }, h('summary', {}, sum), ch.length ? h('div', { class: 'edchwrap' }, tbl, ch.length > MAX ? h('p', { class: 'hint' }, `… and ${ch.length - MAX} more`) : null) : h('p', { class: 'hint' }, 'No line changes.')) };
+  });
+  const total = parts.reduce((a, p) => a + p.ch, 0);
+  box.append(h('h3', {}, title || `Review: ${total} line${total === 1 ? '' : 's'} to change`), note ? h('p', { class: 'hint' }, note) : '',
+    h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => { box.remove(); onDownload(); } }, 'Download'), h('button', { onclick: () => { box.remove(); onCancel && onCancel(); } }, 'Cancel')),
+    ...parts.map(p => p.el));
+  return box;
+}
 export function saveFile(f, name) { download(new Blob([encodeText(f.text, f.enc, f.bom)], { type: 'text/plain' }), name); }
 
 export async function copyText(t) { try { await navigator.clipboard.writeText(t); return true; } catch { return false; } }

@@ -18,6 +18,23 @@ function ctxView(ctx, key, val) {
   if (ctx === 'chat') return h('div', { class: 'gamebox small hud', html: /_Tag$/.test(key) ? `${render('[' + val + ']')} <span style="color:#ebebeb">Player: hello</span>` : html });
   return h('div', { class: 'gamebox small', html });
 }
+const fnv = s => { let x = 0x811c9dc5; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 0x01000193); } return (x >>> 0).toString(36) + '.' + s.length; };
+const SESS = 'apbdesigner-editor-session';
+export function markupIssues(v, kind) {
+  const out = [], n = re => (v.match(re) || []).length;
+  if (kind === 'hud') {
+    const o = n(/<col:[^<>\/][^<>]*>/gi), c = n(/<\/col>/gi);
+    if (o !== c) out.push(`${o} <col:…> but ${c} </col>`);
+    if (/<(Color|Fonts):/i.test(v)) out.push('<Color:>/<Fonts:> do not work in HUD text (use <col:Name>)');
+  } else {
+    const o = n(/<Color:(?!\/)[^<>]*>/gi), c = n(/<Color:\/>/gi), fo = n(/<Fonts:(?!\/)[^<>]*>/gi), fc = n(/<Fonts:\/>/gi);
+    if (o !== c) out.push(`${o} <Color:…> but ${c} <Color:/>`);
+    if (fo !== fc) out.push(`${fo} <Fonts:…> but ${fc} <Fonts:/>`);
+    if (/<\/?col[:>]/i.test(v)) out.push('<col:> is HUD markup and shows as text here (use <Color:>)');
+  }
+  if (n(/</g) !== n(/>/g)) out.push('a < or > without its partner');
+  return out;
+}
 const CTX_NAME = { map: 'map labels', hud: 'HUD', tip: 'tooltip', list: 'filter list', chat: 'chat', plain: 'plain text' };
 
 export function initEditor(root) {
@@ -33,12 +50,12 @@ export function initEditor(root) {
   const kind = () => F && HUD.test(F.name.replace(/\.[^.]+$/, '')) ? 'hud' : 'ui';
   const tools = h('div', { class: 'card glass', hidden: true }), review = h('div', { class: 'card glass edreview', hidden: true }), note = h('div', { class: 'hint' });
   const dirty = () => F && changed() > 0;
-  const discard = () => !dirty() || confirm(`${F.name} has ${changed()} unsaved change(s). Discard them?`);
+  const discard = () => { if (!dirty()) return true; if (!confirm(`${F.name} has ${changed()} unsaved change(s). Discard them?`)) return false; dropSess(); return true; };
   window.addEventListener('beforeunload', e => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   let loadSeq = 0;
   const load = async src => {
-    F = src; undo = []; const tok = ++loadSeq; review.hidden = true; note.textContent = '';
+    F = src; F.sig = fnv(F.text); undo = []; const tok = ++loadSeq; review.hidden = true; note.textContent = '';
     const parts = F.text.split(/(\r\n|\n|\r)/), lines = parts.filter((x, k) => k % 2 === 0); let sec = ''; rows = [];
     F.eols = parts.filter((x, k) => k % 2 === 1);
     lines.forEach((l, i) => {
@@ -50,8 +67,15 @@ export function initEditor(root) {
     F.lines = lines;
     secSel.innerHTML = ''; secSel.append(h('option', { value: '' }, 'All sections'), [...new Set(rows.map(r => r.sec))].map(s => h('option', { value: s }, s)));
     GAME = null; const stem = F.name.replace(/\.[^.]+$/, '');
-    inGame(stem).then(g => { if (tok !== loadSeq) return; GAME = g.base.size ? g.base : null; if (showGame.checked) draw(); }).catch(() => {});
+    inGame(stem).then(g => { if (tok !== loadSeq) return; GAME = g.base.size ? g.base : null; if (GAME) draw(); }).catch(() => {});
     tools.hidden = false; drawTools(); filter();
+    const old = sessFor(F);
+    if (old) {
+      review.hidden = false;
+      review.replaceChildren(h('h3', {}, 'Unsaved edits found'), h('p', { class: 'hint' }, `You had ${old.edits.length} unsaved change${old.edits.length === 1 ? '' : 's'} in this file (${new Date(old.at).toLocaleString()}).`),
+        h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => { const done = []; old.edits.forEach(([k, v]) => { const r = rows[k]; if (r && typeof v === 'string' && r.val !== v) { done.push([r, r.val, v]); r.val = v; } }); record(done); review.hidden = true; draw(); note.textContent = `Restored ${done.length} edit${done.length === 1 ? '' : 's'}.`; } }, 'Restore them'),
+          h('button', { onclick: () => { try { localStorage.removeItem(SESS); } catch { } review.hidden = true; } }, 'Discard them')));
+    }
   };
   let pickSeq = 0;
   fileIn.onchange = async () => {
@@ -86,9 +110,11 @@ export function initEditor(root) {
     part.forEach(r => {
       const ctx = ctxOf(F && F.name), pv = h('div', { class: 'edprev' }, ctxView(ctx, r.key, r.val));
       const gv = showGame.checked && GAME && GAME.has(r.key) && GAME.get(r.key) !== r.val ? h('div', { class: 'edgame' }, h('small', { class: 'hint' }, 'Game default'), ctxView(ctx, r.key, GAME.get(r.key))) : null;
-      const ta = h('textarea', { rows: Math.min(6, 1 + Math.floor(r.val.length / 70)), oninput: () => { r.val = ta.value.replace(/\r?\n/g, '↵'); pv.replaceChildren(ctxView(ctx, r.key, r.val)); tr.classList.toggle('chg', r.val !== r.orig); status.textContent = summary(); }, onfocus: () => last = ta }, r.val);
+      const ta = h('textarea', { rows: Math.min(6, 1 + Math.floor(r.val.length / 70)), oninput: () => { r.val = ta.value.replace(/\r?\n/g, '↵'); pv.replaceChildren(ctxView(ctx, r.key, r.val)); tr.classList.toggle('chg', r.val !== r.orig); flag(); status.textContent = summary(); keep(); }, onfocus: () => { last = ta; ta.before = r.val; }, onchange: () => { if (ta.before !== undefined && ta.before !== r.val) record([[r, ta.before, r.val]]); ta.before = r.val; } }, r.val);
       ta.row = r;
-      const tr = h('tr', { class: r.val !== r.orig ? 'chg' : '' }, h('td', { class: 'k' }, h('div', {}, r.key), h('small', { class: 'hint' }, r.sec)), h('td', {}, ta), h('td', {}, pv, gv));
+      const marks = h('small', { class: 'edmark' }), flag = () => { const p = problems(r); marks.textContent = p.join(' · '); marks.title = p.join('\n'); };
+      const tr = h('tr', { class: r.val !== r.orig ? 'chg' : '' }, h('td', { class: 'k' }, h('div', {}, r.key), h('small', { class: 'hint' }, r.sec), marks), h('td', {}, ta), h('td', {}, pv, gv));
+      flag();
       tb.append(tr);
     });
     t.append(tb); table.append(view.length ? t : h('p', { class: 'hint' }, rows.length ? 'No matching lines.' : 'Open a localisation file to start.'));
@@ -99,6 +125,15 @@ export function initEditor(root) {
   };
   const summary = () => F ? `${F.name} · preview: ${CTX_NAME[ctxOf(F.name)]} · ${F.enc === 'cp1252' || (F.enc === 'utf-8' && !F.bom && !/[^\x00-\x7f]/.test(F.text)) ? '8-bit' : F.enc}${F.fixed ? ' (' + F.fixed + ' broken line ends repaired)' : ''} · ${rows.length} lines · ${view.length} shown · ${changed()} changed · ${kind() === 'hud' ? 'HUD text: use <col:Name>' : 'UI text: <Color:> and <Fonts:> work'}` : '';
   let last = null;
+  const unknown = r => !!(GAME && !GAME.has(r.key.trim()));
+  const problems = r => { const p = []; if (unknown(r)) p.push('key not in the game\'s English file: the game ignores this line'); if (r.val !== r.orig) p.push(...markupIssues(r.val, kind())); return p; };
+  let keepT = 0;
+  const keep = () => { clearTimeout(keepT); keepT = setTimeout(() => {
+    try { if (!F) return; const edits = rows.map((r, k) => r.val !== r.orig ? [k, r.val] : null).filter(Boolean);
+      if (edits.length) localStorage.setItem(SESS, JSON.stringify({ name: F.name, sig: F.sig, at: Date.now(), edits })); else if (sessFor(F)) localStorage.removeItem(SESS); } catch { }
+  }, 300); };
+  const sessFor = f => { try { const x = JSON.parse(localStorage.getItem(SESS)); return x && x.name === f.name && x.sig === f.sig && Array.isArray(x.edits) && x.edits.length ? x : null; } catch { return null; } };
+  const dropSess = () => { try { if (F && sessFor(F)) localStorage.removeItem(SESS); } catch { } };
   const record = list => { if (!list.length) return; undo.push(list); if (undo.length > 30) undo.shift(); };
   const onPage = () => view.slice(page * PAGE, (page + 1) * PAGE);
   const targets = () => st.scope === 'all' ? view : onPage();
@@ -109,7 +144,7 @@ export function initEditor(root) {
     const done = [];
     t.forEach(r => { const v = fn(r.val, r); if (v !== r.val) { done.push([r, r.val, v]); r.val = v; } });
     record(done); const n = done.length;
-    draw(); note.textContent = `${label}: ${n} line${n === 1 ? '' : 's'} changed${st.scope === 'all' ? ' (all matching lines)' : ' (this page)'}.`;
+    draw(); keep(); note.textContent = `${label}: ${n} line${n === 1 ? '' : 's'} changed${st.scope === 'all' ? ' (all matching lines)' : ' (this page)'}.`;
   };
   const grad = t => colourText(t, { mode: st.mode === 'triple' ? 'smooth' : st.mode, stops: [st[1], st[2]].concat(st.mode === 'triple' ? [st[3]] : []).map(hex2rgb), steps: st.steps, kind: kind(), font: kind() === 'ui' ? st.font : '' });
   const strip = t => t.replace(/<(Color|col|Fonts|\/col)[^<>]*>/gi, '');
@@ -132,8 +167,9 @@ export function initEditor(root) {
     if (!last || !document.body.contains(last)) return;
     const a = last.selectionStart, b = last.selectionEnd, v = last.value;
     if (a === b) return;
-    const r = last.row, before = r.val; last.value = v.slice(0, a) + grad(v.slice(a, b)) + v.slice(b); last.dispatchEvent(new Event('input')); record([[r, before, r.val]]);
+    const r = last.row, before = r.val; last.value = v.slice(0, a) + grad(v.slice(a, b)) + v.slice(b); last.dispatchEvent(new Event('input')); record([[r, before, r.val]]); resetBefore(last);
   };
+  const resetBefore = t => { if (t) t.before = t.row.val; };
   const drawTools = () => {
     tools.innerHTML = '';
     const g = h('div', { class: 'grad' });
@@ -152,10 +188,10 @@ export function initEditor(root) {
       h('div', { class: 'row' }, g),
       h('div', { class: 'row' }, h('button', { onclick: () => bulk(recolour, 'Colour lines'), title: 'Replaces the colour tags of each line; font tags stay unless you pick a font' }, 'Colour lines'), h('button', { onclick: wrapSel, title: 'Select text in a line first' }, 'Colour selected text'),
         h('button', { onclick: () => bulk(strip, 'Remove colour/font tags') }, 'Remove colour/font tags'), h('button', { onclick: () => bulk((v, r) => r.orig, 'Revert') }, 'Revert lines'),
-        h('button', { title: 'Undoes the last bulk action; lines you typed in since then keep your typing', onclick: () => {
+        h('button', { title: 'Undoes the last change: a bulk action, or the last line you typed in (counted when you leave the line). Lines you edited since keep your typing', onclick: () => {
           const u = undo.pop(); if (!u) { note.textContent = 'Nothing to undo.'; return; }
           let n = 0, kept = 0; u.forEach(([r, before, after]) => { if (r.val === after) { r.val = before; n++; } else kept++; });
-          draw(); note.textContent = `Undone: ${n} line${n === 1 ? '' : 's'}${kept ? `, ${kept} kept because you edited them afterwards` : ''}.`; } }, 'Undo')),
+          draw(); keep(); note.textContent = `Undone: ${n} line${n === 1 ? '' : 's'}${kept ? `, ${kept} kept because you edited them afterwards` : ''}.`; } }, 'Undo')),
       h('div', { class: 'row' }, findIn, repIn, h('button', { onclick: () => { const f = findRe(); if (!f) { note.textContent = findIn.value ? 'That pattern is not valid.' : 'Type what to find first.'; return; } bulk(v => replaceIn(v, f), 'Replace'); } }, 'Replace')),
       h('div', { class: 'row' }, opt('matchCase', 'Match case'), opt('word', 'Whole words only'), opt('textOnly', 'Leave <tags> alone', 'Only replace in the visible text, never inside markup tags such as <Color:…> or <Images:…>')),
       note,
@@ -167,10 +203,19 @@ export function initEditor(root) {
     if (!F) return;
     const ch = rows.filter(r => r.val !== r.orig);
     if (!ch.length) { review.hidden = false; review.replaceChildren(h('h3', {}, 'Nothing to save'), h('p', { class: 'hint' }, 'No line differs from the file you opened.')); return; }
-    const lines = F.lines.slice(); ch.forEach(r => { lines[r.i] = `${r.key}=${r.quoted ? `"${r.val}"` : intValue(r.val)}`; });
-    const text = lines.map((l, i) => l + (F.eols[i] || '')).join(''), e = fitEnc(text, F.enc, F.bom, F.text);
+    const lineOf = r => `${r.key}=${r.quoted ? `"${r.val}"` : intValue(r.val)}`;
+    const lines = F.lines.slice(); ch.forEach(r => { lines[r.i] = lineOf(r); });
+    const full = lines.map((l, i) => l + (F.eols[i] || '')).join('');
+    const small = () => { const out = [';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;', '; Changed lines only, saved with the APB Reloaded text designer', ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;']; let sec = null;
+      ch.forEach(r => { if (r.sec !== sec) { sec = r.sec; out.push('', `[${sec}]`); } out.push(lineOf(r)); }); return out.join('\r\n') + '\r\n'; };
+    const onlyCh2 = h('input', { type: 'checkbox' });
+    const pick = () => onlyCh2.checked ? { text: small(), enc: 'utf-16le', bom: true, bad: [] } : { text: full, ...fitEnc(full, F.enc, F.bom, F.text) };
+    let e = pick();
     const name = h('input', { type: 'text', class: 'fname', value: outName() });
     const warn = [];
+    const unk = ch.filter(unknown), bad = ch.map(r => [r, markupIssues(r.val, kind())]).filter(x => x[1].length);
+    if (unk.length) warn.push(`${unk.length} changed line${unk.length === 1 ? '' : 's'} use${unk.length === 1 ? 's' : ''} a key the game's English file does not have, so the game ignores ${unk.length === 1 ? 'it' : 'them'} (keys must match exactly, typos included): ${unk.slice(0, 6).map(r => r.key).join(', ')}${unk.length > 6 ? ' …' : ''}`);
+    if (bad.length) warn.push(`${bad.length} changed line${bad.length === 1 ? ' has' : 's have'} markup problems: ${bad.slice(0, 4).map(([r, p]) => `${r.key} (${p.join('; ')})`).join(', ')}${bad.length > 4 ? ' …' : ''}`);
     if (e.bad.length) warn.push(`This is an 8-bit file and the changed lines use characters it cannot hold (${e.bad.slice(0, 12).join(' ')}). It will be saved as UTF-16 instead (the game reads both; the text of the other lines stays the same).`);
     if (isInt()) warn.push(F.lang ? 'This is an English (INT) file: the game\'s default text. The name ends in .GER so you can put it in the GER folder, where it overrides the INT file without replacing it.' : 'The file name ends in .INT, so it is saved as .GER (put it in the GER folder: it overrides the game\'s English file without replacing it). If this file is already your GER copy, change the name back.');
     if (F.fixed) warn.push(`${F.fixed} broken line end(s) of the original file are repaired in the saved copy.`);
@@ -180,7 +225,8 @@ export function initEditor(root) {
     review.hidden = false;
     review.replaceChildren(h('h3', {}, `Save: ${ch.length} changed line${ch.length === 1 ? '' : 's'}`),
       ...warn.map(w => h('p', { class: 'warn' }, w)),
-      h('div', { class: 'row' }, name, h('button', { class: 'primary', onclick: () => { saveFile({ text, enc: e.enc, bom: e.bom }, name.value.trim() || outName()); review.hidden = true; note.textContent = `Saved ${name.value.trim() || outName()} (${ch.length} changed line${ch.length === 1 ? '' : 's'}).`; } }, 'Download'),
+      h('label', { class: 'opt', title: 'A small GER file with just your changed lines: every other line keeps following the game\'s English text, also after game updates' }, onlyCh2, 'Only the changed lines (new small file)'),
+      h('div', { class: 'row' }, name, h('button', { class: 'primary', onclick: () => { e = pick(); saveFile({ text: e.text, enc: e.enc, bom: e.bom }, name.value.trim() || outName()); dropSess(); review.hidden = true; note.textContent = `Saved ${name.value.trim() || outName()} (${ch.length} changed line${ch.length === 1 ? '' : 's'}${onlyCh2.checked ? ', changed lines only' : ''}).`; } }, 'Download'),
         h('button', { onclick: () => { review.hidden = true; } }, 'Cancel')),
       h('p', { class: 'hint' }, `Every other line stays as it was. ${ch.length > MAX ? `First ${MAX} changes:` : 'Changes:'}`), h('div', { class: 'edchwrap' }, list));
     review.scrollIntoView({ block: 'nearest' });
@@ -189,7 +235,7 @@ export function initEditor(root) {
   const scopeInfo = () => { scopeHint.textContent = `This page: ${onPage().length} line${onPage().length === 1 ? '' : 's'} · all matching: ${view.length}`; };
   [q, secSel].forEach(e => e.addEventListener('input', filter)); onlyCh.onchange = filter; qCase.onchange = filter;
   root.append(h('div', { class: 'card glass' }, h('h3', {}, 'Localisation editor'),
-    h('p', { class: 'hint' }, 'Open any APB localisation file (INT, GER, …; UTF-16 and 8-bit files are both read). Edit lines with a live preview, recolour many lines at once, then save: you see every changed line before the download, and every line you did not change stays the same. An 8-bit file is only saved as UTF-16 when your new text needs it. ↵ is the game\'s line break.'),
+    h('p', { class: 'hint' }, 'Open any APB localisation file (INT, GER, …; UTF-16 and 8-bit files are both read). Edit lines with a live preview, recolour many lines at once, then save: you see every changed line before the download, and every line you did not change stays the same. An 8-bit file is only saved as UTF-16 when your new text needs it. Unsaved edits are kept in this browser until you save or discard them. With the game folder set, lines whose key the game does not know are marked. ↵ is the game\'s line break.'),
     h('div', { class: 'row' }, h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Open a ', h('b', {}, 'localisation file'))), dirSel, h('button', { class: 'primary', onclick: saveIt }, 'Save file…')),
     h('div', { class: 'row' }, q, secSel, h('label', { class: 'opt' }, qCase, 'Match case'), h('label', { class: 'opt' }, onlyCh, 'Changed only'), h('label', { class: 'opt', title: 'Shows the game\'s own line (INT from your game folder or config) under lines you or your config changed' }, showGame, 'Show game default')), status), review, tools, table, pager);
   draw();

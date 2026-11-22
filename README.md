@@ -13,8 +13,9 @@ Static fan-made tools for APB Reloaded, served with GitHub Pages:
 
 Press **GeoGuesser** in the map viewer's top bar.
 
-- **Daily challenge**: 5 rounds on two of the six maps, the same spots for everyone on the same day (UTC). Your first result of the
-  day is saved in this browser; replays are not.
+- **Daily challenge**: 5 rounds on two of the six maps, the same spots for everyone on the same day (UTC). Your first attempt of the
+  day is saved in this browser from the first guess on: leaving and coming back continues it where you left off (it
+  can't be restarted). Replays after that, and replays of earlier days, are not saved and don't touch your free-play bests.
 - **Free play**: pick the map (or Mixed: two maps picked at random per game, which keeps the download down; a big
   district is about 25 MB), 3 / 5 / 10 rounds, a time limit, walking, hard mode and the spot types
   (streets, alleys, open areas, rooftops, indoors).
@@ -44,6 +45,14 @@ today) redoes every day from that date on, e.g. after new spot data. Locally: `n
 [--force] [--rebuild-from=YYYY-MM-DD]`. GitHub can switch off scheduled workflows in repositories without activity for
 60 days; if that happens, re-enable it in the Actions tab (the list still covers the rest of the year).
 
+**Bot data and uploads**: the two Actions update `designer/data.json` and `maps/data/daily.json` in the repository, so a
+local copy of the site soon holds older versions of those two files; uploading them would undo the bots' work. Before
+uploading, take those two files from the repository (or leave them out). Optional, to avoid this completely: set the
+repository variable `DATA_BRANCH` (Settings > Secrets and variables > Actions > Variables, e.g. `site-data`) and switch
+**Settings > Pages > Source** to **GitHub Actions**. The bots then commit to that branch only, and the **Deploy site with
+the bot data** workflow publishes your branch with the bot files laid over it, so uploads can never overwrite them.
+Without the variable everything works as before.
+
 The spots (`maps/data/geo.json`) are made automatically from the map data: a top-down height map of every district
 finds flat ground near streets and flat roofs, then each spot is checked by rendering the scene around it (floor under
 the feet, distance to walls in 32 directions, sky above or not). Only directions with a view are used for the start
@@ -58,6 +67,10 @@ the lines your files are missing (in English, ready to translate) and gives the 
 design data that the game's own INT files lack: mission titles and mission briefs (`MissionTemplates`,
 `TaskObjectives`), the Infected Pumpkin event texts and a few team names. Some belong to test missions; turn the
 option off to compare against the INT files only.
+
+**Previous game version** (optional, step 3): give the INT files of the game version your config was made for, and
+the report lists your lines whose English original changed in the update (old English, new English, your text), so
+you can see which translations or restyled lines may be out of date.
 
 ## Image lookup
 
@@ -200,6 +213,11 @@ reverts the last bulk action but keeps lines you typed since. Find/replace can m
 leaves markup tags alone by default. Saving shows every changed line first. The file keeps its encoding: an 8-bit file
 is only saved as UTF-16 when your new text uses characters it cannot hold (such as the ↵ line break), and you are told
 first. English (INT) files are offered as .GER, so your copy overrides the game's file instead of replacing it.
+"Only the changed lines" saves a small GER file with just your edits, so every other line keeps following the game.
+With the game folder set, lines whose key the game doesn't know are marked (the game ignores them), and changed lines
+with unbalanced markup (`<Color:>` without `<Color:/>`, `<col:>` in UI text, …) are flagged. Unsaved edits are kept in
+this browser and offered again when you reopen the same file. Generators and Presets also show the line changes
+before the download.
 
 ## Stat tables
 

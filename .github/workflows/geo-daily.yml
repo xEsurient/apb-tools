@@ -30,6 +30,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Load the held schedule
+        run: bash .github/scripts/data-load.sh maps/data/daily.json
+        env:
+          DATA_BRANCH: ${{ vars.DATA_BRANCH }}
       - name: Add the next days to maps/data/daily.json
         run: node .github/scripts/geo-daily.mjs
         env:
@@ -37,10 +41,17 @@ jobs:
           REBUILD_FROM: ${{ inputs.rebuild_from }}
       - name: Commit the schedule
         run: |
-          if git diff --quiet -- maps/data/daily.json && ! git ls-files --others --exclude-standard -- maps/data/daily.json | grep -q .; then echo "No schedule changes."; exit 0; fi
-          git config user.name "GeoGuesser"
-          git config user.email "138257050+xEsurient@users.noreply.github.com"
-          git add maps/data/daily.json
-          git commit -m "GeoGuesser: daily schedule up to $(node -p "Object.keys(require('./maps/data/daily.json').days).sort().at(-1)")"
-          for i in 1 2 3; do git pull --rebase && git push && exit 0; sleep 5; done
-          exit 1
+          bash .github/scripts/data-commit.sh "GeoGuesser: daily schedule up to $(node -p "Object.keys(require('./maps/data/daily.json').days).sort().at(-1)")" maps/data/daily.json
+        env:
+          DATA_BRANCH: ${{ vars.DATA_BRANCH }}
+          COMMIT_NAME: GeoGuesser
+          COMMIT_EMAIL: 138257050+xEsurient@users.noreply.github.com
+
+  deploy:
+    needs: schedule
+    if: vars.DATA_BRANCH != ''
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

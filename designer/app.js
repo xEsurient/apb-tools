@@ -1,4 +1,4 @@
-import { $, $$, h, data, setNamed, named, render, seg, toggle, colourPick, FONTS, buildFile, saveFile, readFile, store, hex2rgb, rgb2hex, apbTag, nearestNamed, colourText, fl, copyText } from './core.js';
+import { $, $$, h, data, setNamed, named, render, seg, toggle, colourPick, FONTS, buildFile, saveFile, readFile, changeReview, store, hex2rgb, rgb2hex, apbTag, nearestNamed, colourText, fl, copyText } from './core.js';
 import { GENS } from './gen.js';
 import { initEditor } from './editor.js';
 import { initCategories } from './categories.js';
@@ -103,13 +103,16 @@ async function out(g, name) {
   const lines = linesOf(g);
   if (!lines.length) { $('#outinfo').textContent = 'Nothing to write: every line is set to Vanilla.'; return; }
   const dir = !baseFile[g.id] && findLoc(g.file, ['GER']);
-  let file = baseFile[g.id] || (dir ? await readLoc(dir) : null), rep = 0, add = 0;
+  const base = baseFile[g.id] || (dir ? await readLoc(dir) : null); let file = base, rep = 0, add = 0;
   const bySec = new Map(); lines.forEach(([k, v, sct]) => { const s = sct || g.file; if (!bySec.has(s)) bySec.set(s, []); bySec.get(s).push([k, v]); });
   const was = file && file.enc; let bad = [];
   for (const [sct, ls] of bySec) { const r = buildFile(sct, ls, file); file = { name: name, text: r.text, enc: r.enc, bom: r.bom }; rep += r.replaced; add += r.added; if (r.bad && r.bad.length) bad = r.bad; }
-  saveFile(file, name || g.file + '.GER');
   const conv = bad.length && was !== file.enc ? ` Saved as UTF-16: the new lines use characters an 8-bit file cannot hold (${bad.slice(0, 8).join(' ')}).` : '';
-  $('#outinfo').textContent = (baseFile[g.id] || dir ? `Saved ${name}: ${rep} lines replaced, ${add} added.` : `Saved ${name}: ${add} lines.`) + conv;
+  const fn = name || g.file + '.GER';
+  $$('#genbox .edreview').forEach(e => e.remove());
+  $('#genbox .out').after(changeReview({ files: [{ name: fn, base: base && base.text, lines: lines.map(([k, v]) => [k, v]), conv: conv.trim() }],
+    note: base ? `Merging into ${base.name || base.path}: lines that are not listed stay as they are.` : 'New file with only these lines.',
+    onDownload: () => { saveFile(file, fn); $('#outinfo').textContent = (base ? `Saved ${fn}: ${rep} lines replaced, ${add} added.` : `Saved ${fn}: ${add} lines.`) + conv; } }));
 }
 function copyLines(g, btn) {
   const t = linesOf(g).map(([k, v]) => `${k}=${v}`).join('\r\n');
