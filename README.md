@@ -58,7 +58,9 @@ redoes every day from three days ahead (today and the next two days stay as they
 
 **Bot data and uploads**: the two Actions update `designer/data.json` and `maps/data/daily.json` in the repository, so a
 local copy of the site soon holds older versions of those two files; uploading them would undo the bots' work. Before
-uploading, take those two files from the repository (or leave them out). Optional, to avoid this completely: set the
+uploading, take those two files from the repository, or leave them out: a web upload only adds or replaces the files
+you drop in, so the repository keeps the bots' copies. Don't add them to `.gitignore`: the bots commit them with git, and
+the site is served from the repository's files. Optional, to avoid this completely: set the
 repository variable `DATA_BRANCH` (Settings > Secrets and variables > Actions > Variables, e.g. `site-data`) and switch
 **Settings > Pages > Source** to **GitHub Actions**. The bots then commit to that branch only, and the **Deploy site with
 the bot data** workflow publishes your branch with the bot files laid over it, so uploads can never overwrite them.

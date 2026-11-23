@@ -16,13 +16,14 @@ async function lists() {
 export async function imageByRef(ref) { return (await lists()).byRef.get(String(ref).toLowerCase()) || null; }
 
 export const asSel = x => !x ? null : x.k ? x : { k: 'img', ref: x.ref, w: x.w, h: x.h };
-const tintTag = hex => { const c = hex2rgb(hex); return c ? `<ImageColour:R=${fl(c[0] / 255)} G=${fl(c[1] / 255)} B=${fl(c[2] / 255)}>` : ''; };
-export function imageTag(sel, yl = 16, tint = null) {
+const tintTag = hex => { const c = hex2rgb(hex); return c ? `<ImageColour:R=${fl(c[0] / 255)} G=${fl(c[1] / 255)} B=${fl(c[2] / 255)} A=1>` : ''; };
+export const OPAQUE = '<ImageColour:R=1 G=1 B=1 A=1>';
+export function imageTag(sel, yl = 16, tint = null, opaque = false) {
   sel = asSel(sel); if (!sel) return '';
   const xl = Math.max(1, Math.round((sel.w || yl) / (sel.h || yl) * yl));
   const tag = sel.k === 'img' ? `<Images:${sel.ref};Resize=TRUE XL=${xl} YL=${yl}>`
     : `<APB_Images:${sel.ref};XL=${sel.k === 'icon' ? yl : xl} YL=${yl} Resize=True ${sel.k === 'icon' ? 'HUDIcon' : 'HUDTexture'}=TRUE>`;
-  return (tint ? tintTag(tint) : '') + tag;
+  return ((tint && tintTag(tint)) || (opaque ? OPAQUE : '')) + tag;
 }
 export const imageSpan = (sel, size = 28) => { sel = asSel(sel); if (!sel) return ''; const w = Math.max(8, Math.round((sel.w || 32) / (sel.h || 32) * size));
   return `<span class="mk-img" data-k="${sel.k}" data-ref="${sel.ref.replace(/"/g, '')}" style="width:${Math.min(w, 110)}px;height:${size}px"></span>`; };

@@ -28,7 +28,7 @@ function catValue(D, st, id, row, idx) {
   const stops = [it[1], it[2]].concat(it.mode === 'triple' ? [it[3]] : []).map(hex2rgb);
   const shown = (key === 'number' ? `${idx + 1}. ` : '') + text;
   const coloured = it.mode === 'none' ? shown : colourText(shown, { mode: it.mode === 'triple' ? 'smooth' : it.mode, stops, kind: 'ui' });
-  const icon = imageTag(it.icon, st.yl, it.tint);
+  const icon = imageTag(it.icon, st.yl, it.tint, true);
   let v = it.iconOnly && icon ? icon : `${icon}${icon ? ' ' : ''}${coloured}`;
   if (st.font) v = `<Fonts:${st.font}>${v}<Fonts:/>`;
   return v;
