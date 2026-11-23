@@ -103,7 +103,7 @@ export const SLOTS = [
   { id: 'chat', label: 'Chat tags', files: 'ChatMessageCategories', variants: [
     ['stock', 'Game default'],
     ['short', 'One letter', (D, P) => { const used = new Set(); return mapStock(P, 'ChatMessageCategories', (k, v) => {
-      if (!/_Tag$/.test(k) || !v.trim()) return undefined; const w = stripTags(v).trim(); let t = w[0].toUpperCase(), i = 1;
+      if (!/_Tag$/.test(k) || !v.trim()) return undefined; const w = stripTags(v).trim(); if (!w) return undefined; let t = w[0].toUpperCase(), i = 1;
       while (used.has(t) && i < w.length) t = (w[0] + w[i++]).toUpperCase(); used.add(t); return t; }); }]] },
   { id: 'targets', label: 'Objective names', files: 'TaskTargetTypes', variants: [
     ['stock', 'Game default'], ['hidden', 'Hidden', (D, P) => mapStock(P, 'TaskTargetTypes', (k, v) => /DisplayName/.test(k) ? ' ' : undefined)]] },

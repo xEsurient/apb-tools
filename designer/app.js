@@ -1,4 +1,4 @@
-import { $, $$, h, data, setNamed, named, render, seg, toggle, colourPick, FONTS, buildFile, saveFile, readFile, changeReview, store, hex2rgb, rgb2hex, apbTag, nearestNamed, colourText, fl, copyText } from './core.js';
+import { $, $$, h, data, setNamed, named, render, seg, toggle, colourPick, FONTS, buildFile, saveFile, readFile, changeReview, store, hex2rgb, rgb2hex, apbTag, nearestNamed, colourText, fl, copyText, intValue } from './core.js';
 import { GENS } from './gen.js';
 import { initEditor } from './editor.js';
 import { initCategories } from './categories.js';
@@ -50,6 +50,9 @@ function buildGen() {
 
 const S = {};
 let current = null, baseFile = {}, limit = 60;
+const BKEY = id => 'apbdesigner-base-' + id;
+const keepBase = id => { try { if (baseFile[id]) sessionStorage.setItem(BKEY(id), JSON.stringify(baseFile[id])); else sessionStorage.removeItem(BKEY(id)); } catch { } };
+const loadBase = id => { if (baseFile[id]) return; try { const v = JSON.parse(sessionStorage.getItem(BKEY(id)) || 'null'); if (v && typeof v.text === 'string' && typeof v.name === 'string') baseFile[id] = v; } catch { } };
 function openGen(g) {
   current = g; limit = 60;
   S[g.id] = store.get('gen-' + g.id, structuredClone(g.defaults));
@@ -60,15 +63,16 @@ function openGen(g) {
   for (const c of g.controls) ctl.append(control(g, s, c, save));
   ctl.append(h('div', { class: 'row' }, h('button', { onclick: () => { S[g.id] = structuredClone(g.defaults); store.set('gen-' + g.id, S[g.id]); openGen(g); } }, 'Reset settings')));
   const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt,.ini,.fra,.rus,.pol,.esn,.ita' });
+  loadBase(g.id);
   const gerName = n => /\.int$/i.test(n) ? n.replace(/\.[^.]+$/, '') + '.GER' : n;
   const fname = h('input', { type: 'text', value: (baseFile[g.id] && gerName(baseFile[g.id].name)) || `${g.file}.GER`, class: 'fname' });
   const fromDir = !baseFile[g.id] && findLoc(g.file, ['GER']);
-  const info = h('span', { class: 'hint' }, baseFile[g.id] ? `Merging into ${baseFile[g.id].name}` : fromDir ? `Merging into ${fromDir.path} from your game folder.` : 'No GER file: download a new file with only these lines (the game keeps its English text for every other line).');
-  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFile[g.id] = await readFile(f); } catch (e) { info.textContent = 'Could not read that file: ' + e.message; return; } fname.value = gerName(f.name); info.textContent = `Merging into ${f.name} (${baseFile[g.id].enc}${baseFile[g.id].fixed ? ', ' + baseFile[g.id].fixed + ' broken line ends repaired' : ''})${fname.value !== f.name ? `; saved as ${fname.value} so it overrides the game's English file instead of replacing it (rename it if this is already your GER copy)` : ''}`; };
+  const info = h('span', { class: 'hint' }, baseFile[g.id] ? `Merging into ${baseFile[g.id].name} (kept for this browser tab)` : fromDir ? `Merging into ${fromDir.path} from your game folder.` : 'No GER file: download a new file with only these lines (the game keeps its English text for every other line).');
+  fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFile[g.id] = await readFile(f); } catch (e) { info.textContent = 'Could not read that file: ' + e.message; return; } keepBase(g.id); fname.value = gerName(f.name); info.textContent = `Merging into ${f.name} (${baseFile[g.id].enc}${baseFile[g.id].fixed ? ', ' + baseFile[g.id].fixed + ' broken line ends repaired' : ''})${fname.value !== f.name ? `; saved as ${fname.value} so it overrides the game's English file instead of replacing it (rename it if this is already your GER copy)` : ''}`; };
   box.append(h('div', { class: 'card glass out' }, h('h3', {}, 'Output'),
     h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Optional: your ', h('b', {}, g.file), ' file to merge into (changed lines are replaced, missing ones added)')),
     h('div', { class: 'row' }, fname, h('button', { class: 'primary', onclick: () => out(g, fname.value) }, 'Download'),
-      h('button', { onclick: e => copyLines(g, e.target) }, 'Copy lines'), h('button', { onclick: () => { delete baseFile[g.id]; openGen(g); } }, 'Clear file')), info, h('div', { id: 'outinfo', class: 'hint' })));
+      h('button', { onclick: e => copyLines(g, e.target) }, 'Copy lines'), h('button', { onclick: () => { delete baseFile[g.id]; keepBase(g.id); openGen(g); } }, 'Clear file')), info, h('div', { id: 'outinfo', class: 'hint' })));
   const q = h('input', { type: 'search', placeholder: 'Search name or key…', id: 'genq', oninput: () => { limit = 60; preview(); } });
   const orig = h('label', { class: 'opt' }, h('input', { type: 'checkbox', id: 'genorig', onchange: preview }), 'Show the game\'s text');
   const mine = h('label', { class: 'opt', id: 'genmine-l', hidden: !hasConfig(), title: 'Your current line from your config / game folder, as it shows in game' }, h('input', { type: 'checkbox', id: 'genmine', checked: hasConfig(), onchange: preview }), 'Show your in-game text');
@@ -115,7 +119,9 @@ async function out(g, name) {
     onDownload: () => { saveFile(file, fn); $('#outinfo').textContent = (base ? `Saved ${fn}: ${rep} lines replaced, ${add} added.` : `Saved ${fn}: ${add} lines.`) + conv; } }));
 }
 function copyLines(g, btn) {
-  const t = linesOf(g).map(([k, v]) => `${k}=${v}`).join('\r\n');
+  const ls = linesOf(g); let t;
+  if (ls.some(x => x[2])) { const by = new Map(); ls.forEach(([k, v, sct]) => { const sc = sct || g.file; if (!by.has(sc)) by.set(sc, []); by.get(sc).push(`${k}=${intValue(v)}`); }); t = [...by].map(([sc, xs]) => `[${sc}]\r\n${xs.join('\r\n')}`).join('\r\n\r\n'); }
+  else t = ls.map(([k, v]) => `${k}=${intValue(v)}`).join('\r\n');
   copyText(t).then(ok => { btn.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => btn.textContent = 'Copy lines', 1200); });
 }
 

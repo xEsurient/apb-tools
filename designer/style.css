@@ -108,3 +108,4 @@ button.mini{padding:2px 8px;font-size:11.5px;border-radius:7px}
 .edgame{margin-top:6px;opacity:.7}.edgame small{display:block;font-size:10px;margin-bottom:2px}
 .groups .grplist button input[type=checkbox]{margin:0 6px 0 0;flex:none}.groups .grplist button.picked{box-shadow:inset 2px 0 0 var(--acc)}
 @media (max-width:600px){input[type=search]{min-width:0}.invbody{grid-template-columns:1fr}.orow{grid-template-columns:1fr}table.ed td:nth-child(2){min-width:200px}}
+.edreset{margin-top:6px;font-size:11.5px;padding:3px 8px}.edhist{margin:6px 0}.edhist summary{cursor:pointer;color:var(--dim)}.edhistlist{display:flex;flex-direction:column;gap:3px;max-height:260px;overflow:auto;margin-top:6px}.edhitem{justify-content:space-between;font-size:12.5px;padding:4px 10px}.edhitem.undone{opacity:.5;text-decoration:line-through}

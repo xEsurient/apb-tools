@@ -9,7 +9,8 @@ const FIRST = '2026-11-12';
 const AHEAD = +(process.env.GEO_DAYS_AHEAD || 365);
 const REFILL = +(process.env.GEO_REFILL_BELOW || 330);
 const FORCE = process.argv.includes('--force') || process.env.FORCE_FILL === 'true';
-const REBUILD = (process.argv.find(a => a.startsWith('--rebuild-from=')) || '').slice(15) || process.env.REBUILD_FROM || '';
+const REBUILD_ARG = (process.argv.find(a => a.startsWith('--rebuild-from=')) || '').slice(15) || process.env.REBUILD_FROM || '';
+const REBUILD_AHEAD = (process.argv.find(a => a.startsWith('--rebuild-ahead=')) || '').slice(16) || process.env.REBUILD_AHEAD || '';
 
 const DLIST = ['WaterfrontDistrict', 'FinancialDistrict', 'AsylumDistrict', 'RWorldSocialDistrict', 'PGBeaconDistrict', 'PGCrateDistrict'];
 const TYPES = ['street', 'alley', 'open', 'indoor'];
@@ -50,8 +51,14 @@ async function main() {
   try { cur = JSON.parse(await fs.readFile(OUT, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (cur.v !== 1 || typeof cur.days !== 'object') throw new Error('daily.json has an unknown format');
   const today = new Date().toISOString().slice(0, 10);
+  let REBUILD = REBUILD_ARG;
+  if (!REBUILD && REBUILD_AHEAD) {
+    if (!/^\d+$/.test(REBUILD_AHEAD) || +REBUILD_AHEAD < 1) throw new Error('--rebuild-ahead needs a whole number of days (1 or more)');
+    REBUILD = day(today, +REBUILD_AHEAD);
+  }
+  if (!Number.isInteger(AHEAD) || AHEAD < 1 || !Number.isInteger(REFILL) || REFILL < 0) throw new Error('GEO_DAYS_AHEAD / GEO_REFILL_BELOW must be whole numbers');
   if (REBUILD) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(REBUILD) || REBUILD <= today) throw new Error('--rebuild-from needs a date after today (UTC), so nobody\'s current day changes');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(REBUILD) || Number.isNaN(Date.parse(REBUILD + 'T00:00:00Z')) || day(REBUILD, 0) !== REBUILD || REBUILD <= today) throw new Error('--rebuild-from needs a date after today (UTC), so nobody\'s current day changes');
     for (const k of Object.keys(cur.days)) if (k >= REBUILD) delete cur.days[k];
     console.log(`Dropped every day from ${REBUILD} on.`);
   }

@@ -146,11 +146,14 @@ async function switchDistrict(name) {
   catch (e) { $('#district').value = S.name; fail(`Could not load ${name}: ${e.message}`); }
 }
 
+let loadSeq = 0;
+function cancelLoad() { loadSeq++; progress(''); if (S.name) $('#district').value = S.name; }
 async function loadDistrict(name) {
   const entry = S.index.districts.find(d => d.name === name); if (!entry) throw new Error('unknown district');
-  progress('Loading ' + name + '…');
-  try { S.d = await getJSON('data/' + entry.file); } catch (e) { progress(''); throw e; }
-  S.name = name; S.hits = new Set(); S.sel = -1; V3.cancel();
+  const tok = ++loadSeq; progress('Loading ' + name + '…');
+  let data; try { data = await getJSON('data/' + entry.file); } catch (e) { if (tok === loadSeq) progress(''); throw e; }
+  if (tok !== loadSeq) return;
+  S.d = data; S.name = name; $('#district').value = name; S.hits = new Set(); S.sel = -1; V3.cancel();
   const d = S.d, n = d.x.length, byCls = new Map();
   LAYERS.forEach((l, k) => l.cls.forEach(c => { const i = d.classes.indexOf(c); if (i >= 0) byCls.set(i, k); }));
   S.layerOf = new Int8Array(n).fill(-1); S.counts = LAYERS.map(() => 0);
@@ -502,13 +505,13 @@ const V3 = {
       dragging = [e.clientX, e.clientY]; this.yaw -= dx * 0.004; this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * 0.004));
     });
     let tl = null;
-    el.addEventListener('touchstart', e => { tl = e.touches.length === 1 ? [e.touches[0].clientX, e.touches[0].clientY] : e.touches.length === 2 ? { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), f: this.cam.fov } : null; }, { passive: true });
+    el.addEventListener('touchstart', e => { const t = e.targetTouches; tl = t.length === 1 ? [t[0].clientX, t[0].clientY] : t.length === 2 ? { d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY), f: this.cam.fov } : null; }, { passive: true });
     el.addEventListener('touchmove', e => {
-      e.preventDefault(); const t = e.touches; if (!tl) return;
+      e.preventDefault(); const t = e.targetTouches; if (!tl) return;
       if (t.length === 1 && Array.isArray(tl)) { const dx = t[0].clientX - tl[0], dy = t[0].clientY - tl[1]; tl = [t[0].clientX, t[0].clientY]; this.yaw -= dx * 0.005; this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch - dy * 0.005)); this.dirty = true; }
       else if (t.length === 2 && tl.d && S.geo) { this.zoomFov(tl.f * tl.d / Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)); }
     }, { passive: false });
-    el.addEventListener('touchend', e => { tl = e.touches.length === 1 ? [e.touches[0].clientX, e.touches[0].clientY] : null; }, { passive: true });
+    el.addEventListener('touchend', e => { const t = e.targetTouches; tl = t.length === 1 ? [t[0].clientX, t[0].clientY] : null; }, { passive: true });
     el.addEventListener('click', e => { if (!mv && !S.geo) this.pick(e); });
     el.addEventListener('wheel', e => { e.preventDefault(); if (S.geo) { this.zoomFov(this.cam.fov * (e.deltaY < 0 ? 0.9 : 1.1)); return; } this.speed = Math.max(100, Math.min(50000, this.speed * (e.deltaY < 0 ? 1.25 : 0.8))); this.help(); }, { passive: false });
     window.addEventListener('keydown', e => { if (S.mode === '3d' && !['INPUT', 'SELECT'].includes(document.activeElement.tagName)) { this.keys.add(e.key.toLowerCase()); if (e.key.startsWith('Arrow')) e.preventDefault(); } });
@@ -736,14 +739,14 @@ async function openMissions() {
   $('#mitems').innerHTML = '<p class="dim">Loading missions from APBDB…</p>';
   try {
     const [list, dists] = await Promise.all([cachedJSON(API + 'missions', 'apbdb-missions'), cachedJSON(API + 'districts', 'apbdb-districts')]);
-    M.list = list.missions.filter(m => m.bTest !== '1' && m.bDisabled !== '1').sort((a, b) => a.sMissionTitle.localeCompare(b.sMissionTitle)); M.districts = dists; drawMissionList();
+    M.list = (Array.isArray(list && list.missions) ? list.missions : []).filter(m => m && m.bTest !== '1' && m.bDisabled !== '1').map(m => ({ ...m, sMissionTitle: String(m.sMissionTitle ?? m.sAPBDB ?? ''), sAPBDB: String(m.sAPBDB ?? '') })).sort((a, b) => a.sMissionTitle.localeCompare(b.sMissionTitle)); M.districts = dists; drawMissionList();
   } catch (e) { $('#mitems').innerHTML = `<p class="bad">Could not reach APBDB: ${esc(e.message)}</p>`; }
 }
 function drawMissionList() {
   const q = $('#mq').value.trim().toLowerCase(), f = M.filter;
   const items = M.list.filter(m => (!f || String(m.eFaction) === f) && (!q || m.sMissionTitle.toLowerCase().includes(q) || m.sAPBDB.toLowerCase().includes(q)));
   $('#mcount').textContent = `${items.length} / ${M.list.length}`;
-  $('#mitems').innerHTML = items.map(m => `<div class="mi" data-k="${esc(m.sAPBDB)}"><span class="fac f${m.eFaction}">${FACTION_ID[m.eFaction] || '?'}</span><span class="t">${esc(m.sMissionTitle)}</span><small>${m.nStages} stages</small></div>`).join('') || '<p class="dim">No missions match.</p>';
+  $('#mitems').innerHTML = items.map(m => `<div class="mi" data-k="${esc(m.sAPBDB)}"><span class="fac f${esc(m.eFaction)}">${FACTION_ID[m.eFaction] || '?'}</span><span class="t">${esc(m.sMissionTitle)}</span><small>${esc(m.nStages)} stages</small></div>`).join('') || '<p class="dim">No missions match.</p>';
   $('#mitems').querySelectorAll('.mi').forEach(el => el.onclick = () => selectMission(el.dataset.k));
 }
 async function selectMission(key) {
@@ -759,12 +762,12 @@ function drawMission() {
   const homes = [...new Set(contacts.map(c => districtOf(c.eDistrict)).filter(Boolean))];
   const here = homes.includes(S.name);
   v.innerHTML = `<div class="mhead"><a href="#" id="mback" class="hint">← All missions</a><div class="t">${esc(m.sMissionTitle)}</div>
-    <div class="meta"><span class="fac f${m.eFaction}">${FACTION_ID[m.eFaction] || '?'}</span><span class="tag">Group ${m.nGroupSizeMin}–${m.nGroupSizeMax}</span>
-      ${+m.nTakeoutCount ? `<span class="tag">${m.nTakeoutCount} takeouts to win</span>` : ''}${r.nBaseCash_0 ? `<span class="tag">$${(+r.nBaseCash_0).toLocaleString()}–${(+r.nBaseCash_1).toLocaleString()}</span>` : ''}
-      ${r.nBaseContactStanding_0 ? `<span class="tag">Standing ${r.nBaseContactStanding_0}–${r.nBaseContactStanding_1}</span>` : ''}</div>
+    <div class="meta"><span class="fac f${esc(m.eFaction)}">${FACTION_ID[m.eFaction] || '?'}</span><span class="tag">Group ${esc(m.nGroupSizeMin)}–${esc(m.nGroupSizeMax)}</span>
+      ${+m.nTakeoutCount ? `<span class="tag">${+m.nTakeoutCount} takeouts to win</span>` : ''}${r.nBaseCash_0 ? `<span class="tag">$${(+r.nBaseCash_0).toLocaleString()}–${(+r.nBaseCash_1).toLocaleString()}</span>` : ''}
+      ${r.nBaseContactStanding_0 ? `<span class="tag">Standing ${esc(r.nBaseContactStanding_0)}–${esc(r.nBaseContactStanding_1)}</span>` : ''}</div>
     <div class="kv" style="font-size:12.5px">Contacts: ${contacts.map(c => esc(c.sTitle)).join(', ') || '–'}${M.contacts.length ? ` · <a href="#" id="mcontact">show on map</a>` : ''}</div>
     ${homes.length && !here ? `<p class="hint">Plays in ${homes.map(h => `<a href="#" data-go="${h}">${h.replace(/District$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')}</a>`).join(', ')}: switch district to see its target spots.</p>` : ''}</div>
-    ${m.aStages.map((st, k) => { const op = st.eOperation || {}, t = st.eTargetAllocation && st.eTargetAllocation.eTaskTargetType, c = STAGE_COLS[k % STAGE_COLS.length];
+    ${(Array.isArray(m.aStages) ? m.aStages : []).map((st, k) => { const op = st.eOperation || {}, t = st.eTargetAllocation && st.eTargetAllocation.eTaskTargetType, c = STAGE_COLS[k % STAGE_COLS.length];
       const reqs = [st.nTargetsRequired > 0 && `${st.nTargetsRequired} target(s)`, st.nTaskItemsRequired > 0 && `${st.nTaskItemsRequired} item(s)`, st.nVehiclesRequired > 0 && `${st.nVehiclesRequired} vehicle(s)`, st.nTimeLimit > 0 && `${Math.round(st.nTimeLimit / 60)} min limit`, +st.bIsOpposition && 'opposition stage', +st.bIsConcurrent && 'concurrent'].filter(Boolean);
       return `<div class="stage" style="--sc:${c}"><div class="sh"><span class="num">${k + 1}</span>${esc(op.sUIDescription || 'Stage')}<span class="switch ${M.on[k] ? 'on' : ''}" data-s="${k}"></span></div>
         <p>${briefHTML(st.sOwnerBrief !== 'None' ? st.sOwnerBrief : '') || '<span class="dim">No brief</span>'}</p>
@@ -803,4 +806,4 @@ document.addEventListener('keydown', e => { if (S.geo || e.key !== 'Escape' || [
 $('#mq').oninput = () => M.list && drawMissionList();
 document.querySelectorAll('#mfac button').forEach(b => b.onclick = () => { M.filter = b.dataset.f; document.querySelectorAll('#mfac button').forEach(x => x.classList.toggle('on', x === b)); if (M.list) drawMissionList(); });
 const ready = init().catch(e => fail('The map could not load: ' + e.message));
-window.APB = { S, V3, C2, w2s, s2w, fitBox, fit2d, draw2d, setMode, loadDistrict, regionAt, bounds, applySeason, seasonPanel, progress, fail, setHash, ready };
+window.APB = { S, V3, C2, w2s, s2w, fitBox, fit2d, draw2d, setMode, loadDistrict, cancelLoad, regionAt, bounds, applySeason, seasonPanel, progress, fail, setHash, ready };

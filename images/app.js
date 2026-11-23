@@ -127,6 +127,29 @@ async function copy(text) {
     const ok = document.execCommand('copy'); t.remove(); return ok;
   }
 }
+const idOf = (x) => x.kind === 'img' ? x.path : x.name;
+const RECENT_MAX = 12;
+function recentList() { const r = store('recent'); return Array.isArray(r) ? r.filter((e) => e && typeof e.line === 'string').slice(0, RECENT_MAX) : []; }
+function remember(line, x) {
+  if (!line) return;
+  const l = recentList().filter((e) => e.line !== line);
+  l.unshift({ line, label: x ? (x.kind === 'img' ? x.path.slice(x.pkg.length + 1) : x.name) : '', tab: st.tab, id: x ? idOf(x) : '' });
+  store('recent', l.slice(0, RECENT_MAX)); renderRecent();
+}
+function renderRecent() {
+  const l = recentList(), ul = $('#recent');
+  $('#recentn').textContent = l.length ? `(${l.length})` : '';
+  $('#recentclear').hidden = !l.length;
+  ul.replaceChildren();
+  if (!l.length) { const li = document.createElement('li'); li.className = 'hint'; li.textContent = 'Lines you copy show up here.'; ul.append(li); return; }
+  for (const e of l) {
+    const li = document.createElement('li'), b = document.createElement('button'), code = document.createElement('code');
+    b.textContent = 'Copy'; code.textContent = e.line; li.title = e.label || e.line;
+    b.onclick = async () => { const ok = await copy(e.line); b.textContent = ok ? 'Copied' : 'Failed'; setTimeout(() => (b.textContent = 'Copy'), 1200); if (ok) { const rest = recentList().filter((r) => r.line !== e.line); store('recent', [e, ...rest].slice(0, RECENT_MAX)); renderRecent(); } };
+    li.append(b, code); ul.append(li);
+  }
+}
+async function copyLine(line, x) { const ok = await copy(line); if (ok) remember(line, x); return ok; }
 function flash(msg) { $('#copied').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => ($('#copied').textContent = ''), 1800); }
 
 function filtered() {
@@ -178,7 +201,7 @@ function renderGrid() {
     if (badge) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = badge; c.append(b); }
     c.onclick = () => select(x);
     c.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(x); } };
-    c.ondblclick = async () => { select(x); if (await copy(lineFor(x))) flash('Copied'); };
+    c.ondblclick = async () => { select(x); if (await copyLine(lineFor(x), x)) flash('Copied'); };
     grid.append(c);
   }
   $('#more').hidden = l.length <= st.shown;
@@ -228,6 +251,7 @@ function select(x) {
   $('#targetrow').hidden = x.kind === 'img';
   markSel();
   update();
+  writeHash();
 }
 function sizePreview() {
   const x = st.sel, box = $('#dprev'), cap = $('#dsize'); if (!x) return;
@@ -268,10 +292,16 @@ function update() {
   $('#dnote').textContent = notes.join(' ');
 }
 
-function writeHash() { history.replaceState(null, '', '#' + [st.tab, TABS[st.tab].groups && !st.q ? st.group || '' : ''].map(encodeURIComponent).join('/').replace(/\/$/, '')); }
+function writeHash() {
+  const base = [st.tab, TABS[st.tab].groups && !st.q ? st.group || '' : ''].map(encodeURIComponent).join('/').replace(/\/$/, '');
+  history.replaceState(null, '', '#' + base + (st.sel && TABS[st.tab].list.includes(st.sel) ? '?item=' + encodeURIComponent(idOf(st.sel)) : ''));
+}
+let linkItem = null;
 function readHash() {
   const dec = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
-  const [t, g] = location.hash.slice(1).split('/').map(dec);
+  const [h, q] = location.hash.slice(1).split('?');
+  const [t, g] = h.split('/').map(dec);
+  linkItem = q ? new URLSearchParams(q).get('item') : null;
   if (TABS[t]) st.tab = t;
   const T = TABS[st.tab], known = g === ANIMGROUP || (T.groups && T.list.some((x) => x.group === g));
   st.group = known ? g : st.tab === 'images' ? 'APBMenus_Art_HUDIcons' : st.tab === 'hudtex' ? hudtex[0]?.group : null;
@@ -287,7 +317,7 @@ document.querySelectorAll('#tabs button').forEach((b) => (b.onclick = () => setT
 let qt; $('#search').oninput = (e) => { clearTimeout(qt); qt = setTimeout(() => { st.q = e.target.value.trim(); st.shown = PAGE; render(); }, 150); };
 $('#pkgfilter').oninput = renderSide;
 $('#more').onclick = () => { st.shown += PAGE; renderGrid(); };
-$('#close').onclick = () => { $('#detail').hidden = true; st.sel = null; markSel(); };
+$('#close').onclick = () => { $('#detail').hidden = true; st.sel = null; markSel(); writeHash(); };
 $('#bg').value = opt.bg;
 $('#bg').onchange = (e) => { opt.bg = e.target.value; save(); renderGrid(); if (st.sel) $('#dprev').className = 'bg-' + opt.bg; };
 $('#animate').checked = opt.anim;
@@ -311,9 +341,23 @@ document.querySelectorAll('.presets button').forEach((b) => (b.onclick = () => {
   if (b.dataset.s === 'native') { opt.lock = $('#lock').checked = w === h; }
   opt.xl = $('#xl').value = w; opt.yl = $('#yl').value = h; opt.resize = $('#resize').checked = true; changed();
 }));
-$('#copy').onclick = async () => flash((await copy($('#line').value)) ? 'Copied' : 'Copy failed: select the text and copy it');
+$('#copy').onclick = async () => flash((await copyLine($('#line').value, st.sel)) ? 'Copied' : 'Copy failed: select the text and copy it');
+$('#link').onclick = async () => { writeHash(); flash((await copy(location.href)) ? 'Link copied' : 'Copy failed'); };
+$('#recentclear').onclick = (e) => { e.preventDefault(); store('recent', []); renderRecent(); };
 
+function openLinked() {
+  if (!linkItem) return;
+  const T = TABS[st.tab], x = T.list.find((e) => idOf(e) === linkItem); linkItem = null;
+  if (!x) { flash('The linked image is not in this version of the catalogue'); return; }
+  if (T.groups && x.group && st.group !== x.group) st.group = x.group;
+  const k = filtered().indexOf(x); if (k >= st.shown) st.shown = Math.ceil((k + 1) / PAGE) * PAGE;
+  render(); select(x);
+  const c = [...$('#grid').children].find((e) => e.item === x); if (c) c.scrollIntoView({ block: 'center' });
+}
 applyTint();
 readHash();
 document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab));
 render();
+openLinked();
+renderRecent();
+window.addEventListener('hashchange', () => { st.q = ''; $('#search').value = ''; readHash(); document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab)); st.shown = PAGE; render(); openLinked(); });

@@ -19,6 +19,11 @@
   td.warn,p.warn{color:#ffcf66;font-weight:600}
   td.v{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .info{font-size:12.5px;color:var(--dim)}
+  .clr{align-self:flex-start}.clr[hidden]{display:none}
+  .tag.dd{font-size:11px;padding:1px 7px;color:#9ad0ff}
+  .ctx pre{margin:6px 0;padding:8px;background:rgba(0,0,0,.25);border-radius:8px;overflow-x:auto;font-size:12px;line-height:1.5}
+  .ctx span{display:block;white-space:pre}.ctx span.ins{background:rgba(43,182,115,.16);color:var(--ok)}.ctx span.upd{background:rgba(242,163,58,.14)}
+  .ctx i{display:inline-block;min-width:46px;color:var(--dim);font-style:normal;user-select:none}
 </style></head>
 <body>
 <div class="topbar page"><a class="glass brand" href="../">APB TOOLS</a><div style="flex:1"></div>
@@ -34,21 +39,25 @@
       <label class="drop"><input type="file" id="reffiles" multiple accept=".zip,.int,.INT,.ini,.txt">🗜 <span>…or a <b>zip</b> / single files</span></label>
       <label class="opt"><span class="switch on" data-cb="useapbdb"></span>Use <a href="https://apbdb.com" target="_blank" rel="noopener">APBDB</a> item names when the reference has no <code>InventoryItemTypes</code></label>
       <label class="opt"><span class="switch on" data-cb="usesdd"></span>Add the lines the game defines but its INT files leave out (from the game's design data)</label>
-      <span id="refinfo" class="info">No reference chosen: only APBDB item names can be checked.</span></div></section>
+      <span id="refinfo" class="info">No reference chosen: only APBDB item names can be checked.</span><button class="clr" data-clear="ref" hidden>Clear</button></div></section>
     <section class="glass step"><h2><span class="num">2</span>Your config</h2><div class="pick">
       <label class="drop"><input type="file" id="cuszip" accept=".zip" multiple>🗜 <span>Choose your config <b>zip</b></span></label>
       <label class="drop"><input type="file" id="cusdir" webkitdirectory multiple>📁 <span>…or its <b>folder</b></span></label>
       <label class="opt"><span class="switch" data-cb="mark"></span>Mark added lines with a <code>; added from …</code> comment</label>
       <label class="opt"><span class="switch" data-cb="addmissing"></span>Also add whole files your config doesn't have</label>
-      <span id="cusinfo" class="info">Files are paired with the reference by name (e.g. <code>APBGame.GER</code> ↔ <code>APBGame.int</code>).</span></div></section>
+      <label class="opt"><span class="switch" data-cb="rmonly"></span>Remove lines the game's files don't have (keys only in yours; not for .ini files)</label>
+      <label class="opt"><span class="switch" data-cb="rmdup"></span>Remove repeated keys in a section (keeps the first one)</label>
+      <span class="info">The removal options are off by default: compare first and check the "Will be removed" list in a file's details. Which copy of a repeated key the game reads is not verified; the first one is kept.</span>
+      <span id="cusinfo" class="info">Files are paired with the reference by name (e.g. <code>APBGame.GER</code> ↔ <code>APBGame.int</code>).</span><button class="clr" data-clear="cus" hidden>Clear</button></div></section>
     <section class="glass step" style="grid-column:1/-1"><h2><span class="num">3</span>Optional: the previous game version</h2><div class="pick">
       <label class="drop"><input type="file" id="prevdir" webkitdirectory multiple>📁 <span>Old <b>APBGame/Localization/INT</b> folder</span></label>
       <label class="drop"><input type="file" id="prevfiles" multiple accept=".zip,.int,.INT,.ini,.txt">🗜 <span>…or a <b>zip</b> / single files</span></label>
-      <span id="previnfo" class="info">With the INT files of the version your config was made for, the report lists your lines whose English original changed in the update: they may be out of date.</span></div></section>
+      <label class="opt"><span class="switch" data-cb="updold"></span>Update lines that are still the old English to the new English (untranslated lines only)</label>
+      <span id="previnfo" class="info">With the INT files of the version your config was made for, the report lists your lines whose English original changed in the update: they may be out of date.</span><button class="clr" data-clear="prev" hidden>Clear</button></div></section>
   </div>
-  <input type="checkbox" id="useapbdb" checked hidden><input type="checkbox" id="usesdd" checked hidden><input type="checkbox" id="mark" hidden><input type="checkbox" id="addmissing" hidden>
+  <input type="checkbox" id="useapbdb" checked hidden><input type="checkbox" id="usesdd" checked hidden><input type="checkbox" id="mark" hidden><input type="checkbox" id="addmissing" hidden><input type="checkbox" id="rmonly" hidden><input type="checkbox" id="rmdup" hidden><input type="checkbox" id="updold" hidden>
   <div class="bar"><button id="run" class="primary">Compare</button><button id="dlzip" disabled>Download merged config (.zip)</button>
-    <button id="dlsum" disabled>Download SUMMARY.md</button><span id="status" class="dim"></span></div>
+    <button id="dlsum" disabled>Download SUMMARY.md</button><button id="dlcsv" disabled title="Your lines whose English original changed since the previous version (step 3)">English changed (.csv)</button><span id="status" class="dim"></span></div>
   <div id="out"></div>
   <div id="detail"></div>
 </main>

@@ -9,7 +9,7 @@ export const stripTags = s => String(s).replace(/<[^<>]*>/g, '');
 const unlockName = s => stripTags(s).replace(/^Unlock:\s*/i, '').trim();
 
 export function gradOf(s, p, kind, font) {
-  const stops = [s[p + '1'], s[p + '2']].concat(s[p + 'mode'] === 'triple' ? [s[p + '3']] : []).map(x => hex2rgb(x || s[p + '1'] || '#ffffff'));
+  const stops = [s[p + '1'], s[p + '2']].concat(s[p + 'mode'] === 'triple' ? [s[p + '3']] : []).map(x => hex2rgb(x || '') || hex2rgb(s[p + '1'] || '') || [255, 255, 255]);
   return t => colourText(t, { mode: s[p + 'mode'] === 'triple' ? 'smooth' : s[p + 'mode'], stops, steps: +s[p + 'steps'] || 3, kind, font: font || '' });
 }
 const GRAD = (p, label) => ['grad', p, label];
@@ -104,7 +104,7 @@ export const GENS = [
         const v = vehicleStats(v0, s.useMods, D.modDefs.vehicle), out = [];
         const sh = { ...this.defaults.show, ...s.show };
         if (sh.health) out.push(L('Max Health', v.health, true));
-        if (sh.speed) out.push(L('Max Speed', sp(v.speed)));
+        if (sh.speed) out.push(L('Max Speed', v.speedMax ? `Game maximum (base ${sp(v.speed)})` : sp(v.speed)));
         if (sh.rev) out.push(L('Max Reverse Speed', sp(v.rev)));
         if (sh.cargo) out.push(L('Cargo Capacity', v.cargo));
         if (sh.exp && v.exp) out.push(L('Explosion Max Damage', v.exp.dmg));

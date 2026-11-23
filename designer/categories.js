@@ -1,4 +1,4 @@
-import { h, render, seg, toggle, colourPick, colourText, hex2rgb, FONTS, buildFile, saveFile, readFile, store, copyText } from './core.js';
+import { h, render, seg, toggle, colourPick, colourText, hex2rgb, FONTS, buildFile, saveFile, readFile, store, copyText, intValue } from './core.js';
 import { imagePicker, imageTag, imageByRef, asSel } from './imgpick.js';
 
 const HEADS = { deploy: 'SELECT PRIMARY WEAPON', inventory: 'INVENTORY · WEAPONS', joker: 'JOKER DISTRIBUTION · WEAPONS' };
@@ -41,13 +41,13 @@ function changed(D, st, id) {
   return L.rows.some(r => { const it = (s.items || {})[r.row]; return it && (it.icon || it.iconOnly || it.mode !== 'none' || (it.text && it.text !== plain(r.name))); });
 }
 export function categoryFiles(D) {
-  const st = store.get('categories', DEFAULT_ST), out = {};
+  const st = store.get('categories', structuredClone(DEFAULT_ST)), out = {};
   for (const L of allLists(D)) if (changed(D, st, L.id)) out[L.file] = (out[L.file] || []).concat(catLines(D, st, L.id));
   return out;
 }
 
 export function initCategories(root, D) {
-  const st = store.get('categories', DEFAULT_ST);
+  const st = store.get('categories', structuredClone(DEFAULT_ST));
   const save = () => store.set('categories', st);
   const rowsOf = id => listRows(D, st, id);
   let selected = null; const baseFiles = {};
@@ -146,8 +146,8 @@ export function initCategories(root, D) {
         const all = categoryFiles(D)[file] || ls;
         const r = buildFile(file, all, base), nm = base ? base.name.replace(/\.int$/i, '.GER') : `${file}.GER`; saveFile(r, nm);
         msg.textContent = (base && nm !== base.name ? `Saved as ${nm} (an .INT name would replace the game's English file; rename it if it is your GER copy). ` : '') + (base ? `Saved: ${r.replaced} replaced, ${r.added} added (all ${file} lists you edited).` : `Saved ${r.added} lines (all ${file} lists you edited).`) + (r.bad && r.bad.length && base && base.enc !== r.enc ? ` Saved as UTF-16: the new lines use characters an 8-bit file cannot hold (${r.bad.slice(0, 8).join(' ')}).` : '');
-      } }, `Download ${file}`), h('button', { onclick: e => copyText(ls.map(([k, v]) => `${k}=${v}`).join('\r\n')).then(ok => { e.target.textContent = ok ? 'Copied' : 'Copy failed: select the text below'; setTimeout(() => e.target.textContent = 'Copy this list', 1600); }) }, 'Copy this list')),
-      h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${v}`).join('\n')), msg].filter(Boolean));
+      } }, `Download ${file}`), h('button', { onclick: e => copyText(ls.map(([k, v]) => `${k}=${intValue(v)}`).join('\r\n')).then(ok => { e.target.textContent = ok ? 'Copied' : 'Copy failed: select the text below'; setTimeout(() => e.target.textContent = 'Copy this list', 1600); }) }, 'Copy this list')),
+      h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${intValue(v)}`).join('\n')), msg].filter(Boolean));
   };
   const drawOpts = () => {
     const { L } = rowsOf(st.list), groups = [];

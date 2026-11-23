@@ -17,7 +17,8 @@ export function effective(t, mods, useMods) {
 }
 
 export function shotGap(w, k) {
-  return w.burst > 1 && w.burstInt > 0 && k % w.burst === 0 ? w.burstInt : w.fire;
+  const p = w.mag > 0 ? k % w.mag || w.mag : k;
+  return w.burst > 1 && w.burstInt > 0 && p % w.burst === 0 ? w.burstInt : w.fire;
 }
 export function timeFor(w, shots) {
   let t = w.windUp || 0;
@@ -46,6 +47,15 @@ export function weaponStats(t, mods, useMods, C) {
     s.rpm = w.burst > 1 && w.burstInt > 0 ? 60 * w.burst / ((w.burst - 1) * w.fire + w.burstInt) : w.fire > 0 ? 60 / w.fire : 0;
   }
   return s;
+}
+
+export function falloffOf(t, mods, useMods, C) {
+  const s = weaponStats(t, mods, useMods, C); if (s.kind === 'explosive' || !(s.perShot > 0)) return null;
+  const w = s.w, pool = s.kind === 'ltl' ? C.PlayerStamina || 1000 : C.PlayerHealth || 1000;
+  const start = (w.ramp || 0) / 100, len = (w.minRange || 0) / 100, end = w.maxRange > 0 ? w.maxRange / 100 : Infinity, pct = w.minPct > 0 && w.minPct < 100 ? w.minPct / 100 : 1;
+  const mul = d => pct === 1 || d <= start ? 1 : len > 0 && d < start + len ? 1 - (1 - pct) * (d - start) / len : pct;
+  const at = d => { if (!(d >= 0) || d > end) return null; const m = mul(d), stk = Math.ceil(pool / (s.perShot * m) - 1e-9); return { stk, ttk: timeFor(w, stk), m }; };
+  return { s, w, start, len, end, pct, mul, at };
 }
 
 const plainDesc = s => String(s || '').replace(/<[^<>]*>/g, '');

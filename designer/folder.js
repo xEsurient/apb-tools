@@ -51,7 +51,7 @@ export function parseLoc(text) {
   const out = new Map(), bySec = new Map(), secs = new Set(); let sec = '';
   for (const l of text.split(/\r\n|\n|\r/)) {
     const s = l.trim(); if (!s || s.startsWith(';')) continue;
-    if (s.startsWith('[') && s.includes(']')) { sec = s.slice(1, s.indexOf(']')); secs.add(sec.trim().toLowerCase()); continue; }
+    if (s.startsWith('[') && s.endsWith(']')) { sec = s.slice(1, -1); secs.add(sec.trim().toLowerCase()); continue; }
     const eq = l.indexOf('='); if (eq <= 0) continue;
     let v = l.slice(eq + 1); if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
     out.set(l.slice(0, eq).trim(), v); bySec.set(secKey(sec, l.slice(0, eq)), v);

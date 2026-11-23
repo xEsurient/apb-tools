@@ -157,18 +157,18 @@ export function buildFile(section, lines, base) {
   });
   const rest = lines.filter(([k]) => !done.has(k.toLowerCase())).map(([k, v]) => `${k}=${intValue(v)}`);
   if (rest.length) {
-    if (secStart < 0) { while (out.length && !out[out.length - 1].trim()) out.pop(); out.push('', `[${section}]`, ...rest); }
+    if (secStart < 0) { while (out.length && !out[out.length - 1].trim()) out.pop(); if (out.length) out.push(''); out.push(`[${section}]`, ...rest); }
     else { let at = secEnd < 0 ? out.length : secEnd; while (at > secStart + 1 && !out[at - 1].trim()) at--; out.splice(at, 0, ...rest); }
   }
   while (out.length && out[out.length - 1] === '') out.pop();
-  const text = out.join(base.text.includes('\r\n') || !base.text.includes('\n') ? eol : '\n') + eol, e = fitEnc(text, base.enc, base.bom, base.orig ?? base.text);
+  const sep = base.text.includes('\r\n') || !base.text.includes('\n') ? eol : '\n', text = out.join(sep) + sep, e = fitEnc(text, base.enc, base.bom, base.orig ?? base.text);
   return { text, enc: e.enc, bom: e.bom, bad: e.bad, replaced, added: rest.length, orig: base.orig ?? base.text };
 }
 function keyVals(text) {
   const m = new Map(); let sec = '';
   for (const l of String(text || '').split(/\r\n|\n|\r/)) {
     const t = l.trim(); if (!t || t.startsWith(';')) continue;
-    if (t.startsWith('[') && t.includes(']')) { sec = t.slice(1, t.indexOf(']')).trim().toLowerCase(); continue; }
+    if (t.startsWith('[') && t.endsWith(']')) { sec = t.slice(1, -1).trim().toLowerCase(); continue; }
     const eq = l.indexOf('='); if (eq <= 0) continue;
     let v = l.slice(eq + 1); if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
     const k = sec + '\u0000' + l.slice(0, eq).trim().toLowerCase(); if (!m.has(k)) m.set(k, v);

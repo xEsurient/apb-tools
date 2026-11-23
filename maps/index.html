@@ -75,6 +75,12 @@
   #georeveal .others{font-size:12.5px;color:var(--dim);margin-top:6px}
   #geohint{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:7;padding:8px 14px;font-size:12px;color:var(--dim);display:none;white-space:nowrap;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}
   #geotoast{position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:10;padding:8px 14px;display:none}
+  #geojoy{position:fixed;left:22px;bottom:22px;z-index:8;width:124px;height:124px;border-radius:50%;display:none;touch-action:none;user-select:none;-webkit-user-select:none}#geojoy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(242,163,58,.85);box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none}
+  #georun{position:fixed;left:160px;bottom:40px;z-index:8;display:none;touch-action:manipulation}#georun.on{background:var(--acc);color:var(--acc-ink)}
+  body.geo.walkpad #geojoy,body.geo.walkpad #georun{display:flex}body.geo.walkpad #geohint{bottom:156px}
+  #geocard .cal{display:grid;grid-template-rows:repeat(7,14px);grid-auto-flow:column;grid-auto-columns:14px;gap:3px;margin:6px 0 2px}#geocard .cal i{border-radius:3px;background:rgba(255,255,255,.06)}#geocard .cal i.f{background:none}#geocard .cal i.t{outline:1px solid var(--text)}
+  #geocard .cal i.g{background:#2bb673}#geocard .cal i.y{background:#f2c94c}#geocard .cal i.o{background:#f2994a}#geocard .cal i.r{background:#eb5757}#geocard .cal i.n{background:#555a66}
+  #geocard .streak{display:flex;gap:18px;font-size:13px;margin-top:8px}#geocard .streak b{font-size:18px;color:var(--acc)}
   #geoconfirm{position:fixed;inset:0;z-index:11;display:none;background:rgba(0,0,0,.35)}#geoconfirm .glass{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100vw - 24px));padding:18px 20px}
   @media (max-width:760px){#geobar{top:10px;gap:6px;padding:5px 6px 5px 10px}#geobar .gi{gap:8px;font-size:12px}#geobar .hide-s{display:none}body.geo .brand{display:none}}
   @media (max-width:760px){#missions{left:16px;right:16px;width:auto;top:auto;bottom:16px;max-height:55vh}body.mopen #detail{right:16px}}
@@ -121,7 +127,7 @@
 <div id="zoom" class="glass"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="rleft" aria-label="Rotate left 90°" title="Rotate left (Shift+R)">⟲</button><button id="rright" aria-label="Rotate right 90°" title="Rotate right (R)">⟳</button><button id="rnorth" aria-label="Reset rotation" title="Reset rotation">⬆</button></div>
 <div id="mini" class="glass"><canvas width="440" height="440"></canvas></div>
 <div id="help" class="glass"></div><div id="progress" class="glass"></div><div id="tip" class="glass"></div>
-<div id="geobar" class="glass"></div><div id="geocard" class="glass" role="dialog" aria-modal="true"></div><div id="georeveal" class="glass"></div><div id="geohint" class="glass"></div><div id="geotoast" class="glass"></div><div id="geoconfirm"><div class="glass" role="alertdialog"></div></div>
+<div id="geobar" class="glass"></div><div id="geocard" class="glass" role="dialog" aria-modal="true"></div><div id="georeveal" class="glass"></div><div id="geohint" class="glass"></div><div id="geotoast" class="glass"></div><div id="geoconfirm"><div class="glass" role="alertdialog"></div></div><div id="geojoy" class="glass" aria-label="Walk"><i></i></div><button id="georun" class="glass" aria-pressed="false">Run</button>
 <script type="module" src="app.js"></script>
 <script type="module" src="geo.js"></script>
 </body></html>

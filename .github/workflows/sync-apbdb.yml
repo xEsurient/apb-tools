@@ -41,7 +41,7 @@ jobs:
           ALLOW_OLDER: ${{ inputs.allow_older }}
       - name: Commit the updated data
         run: |
-          bash .github/scripts/data-commit.sh "Sync $(node -p "const a = require('./designer/data.json').apbdb || {}; (a.version || a.partialOf || 'none') + (a.partialOf ? ' (partial)' : '')")" designer/data.json
+          bash .github/scripts/data-commit.sh "Sync $(node -p "const a = require('./designer/data.json').apbdb || {}; (a.partialOf || a.version || 'none') + (a.partialOf ? ' (partial)' : '')")" designer/data.json
         env:
           DATA_BRANCH: ${{ vars.DATA_BRANCH }}
           COMMIT_NAME: github-actions[bot]

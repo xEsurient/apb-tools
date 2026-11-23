@@ -12,6 +12,49 @@ const mapsOf = t => t.st.d === 'all' ? [...new Set(t.spots.map(s => DNAME[s.d]))
 const nf = n => Math.round(n).toLocaleString('en-US');
 const dist = m => m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
 const today = () => new Date().toISOString().slice(0, 10);
+const untilNext = () => { const n = new Date(), t = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1) - n.getTime(), hh = Math.floor(t / 3.6e6), mm = Math.floor(t % 3.6e6 / 6e4); return `Next daily in ${hh ? `${hh} h ` : ''}${mm} min (00:00 UTC)`; };
+const dayAdd = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+const played = v => !!v && (Array.isArray(v.res) ? v.res.length > 0 : (v.n || 0) > 0);
+function streaks(daily, now) {
+  const has = d => played(daily[d]);
+  let cur = 0, d = has(now) ? now : dayAdd(now, -1);
+  while (has(d)) { cur++; d = dayAdd(d, -1); }
+  let best = 0, run = 0, last = null;
+  for (const k of Object.keys(daily).filter(has).sort()) { run = last && dayAdd(last, 1) === k ? run + 1 : 1; best = Math.max(best, run); last = k; }
+  return { cur, best: Math.max(best, cur), days: Object.keys(daily).filter(has).length };
+}
+function calendar(daily, now) {
+  const wd = (new Date(now + 'T00:00:00Z').getUTCDay() + 6) % 7, first = dayAdd(now, -(9 * 7 + wd)), cells = [];
+  for (let i = 0; i < 70; i++) {
+    const d = dayAdd(first, i), v = daily[d];
+    if (d > now) { cells.push('<i class="f"></i>'); continue; }
+    const p = played(v), avg = p ? v.total / Math.max(1, Array.isArray(v.res) ? v.res.length : v.n || 5) : null;
+    const c = !p ? '' : avg >= 4000 ? 'g' : avg >= 2000 ? 'y' : avg >= 500 ? 'o' : avg > 0 ? 'r' : 'n';
+    cells.push(`<i class="${c}${d === now ? ' t' : ''}" title="${d}${p ? `: ${nf(v.total)} / 25,000${v.open ? ' (unfinished)' : ''}` : ''}"></i>`);
+  }
+  return `<div class="cal" aria-label="Your daily results, last 10 weeks">${cells.join('')}</div>`;
+}
+const DKEEP = 400, DFULL = 60;
+const STYPES = {};
+function typeOf(sp) {
+  const v = GEO && GEO.ok[sp.d]; if (!v) return null;
+  let m = STYPES[sp.d];
+  if (!m) { m = STYPES[sp.d] = new Map(); for (let k = 0; k < v.s.length; k += 5) m.set(v.s[k] + ',' + v.s[k + 1], GEO.tags[v.s[k + 4]]); }
+  return m.get(Math.round(sp.x / 10) + ',' + Math.round(sp.y / 10)) || null;
+}
+function recordRound(sp, r) {
+  const add = (o, k) => { const a = o[k] || [0, 0, 0, 0, 0]; a[0]++; a[1] += r.pts; if (r.m != null) { a[2] += Math.round(r.m); a[3]++; } a[4] = Math.max(a[4], r.pts); o[k] = a; };
+  const ty = typeOf(sp);
+  upd(o => { const s = o.stats = o.stats && typeof o.stats === 'object' ? o.stats : {}; s.m = s.m || {}; s.t = s.t || {}; add(s.m, sp.d); if (ty) add(s.t, ty); });
+}
+function statsHtml() {
+  const s = store.get().stats || {}, rows = (o, name) => Object.entries(o || {}).filter(([, a]) => Array.isArray(a) && a[0] > 0).sort((a, b) => b[1][0] - a[1][0])
+    .map(([k, a]) => `<tr><td>${esc(name(k))}</td><td class="r">${nf(a[0])}</td><td class="r">${nf(a[1] / a[0])}</td><td class="r">${a[3] ? dist(a[2] / a[3]) : '–'}</td><td class="r">${nf(a[4])}</td></tr>`).join('');
+  const head = l => `<tr><th>${l}</th><th class="r">Rounds</th><th class="r">Avg pts</th><th class="r">Avg dist.</th><th class="r">Best</th></tr>`;
+  const m = rows(s.m, n => DNAME[n] || n), t = rows(s.t, k => TNAME[k] || k);
+  return m ? `<h4>Per map</h4><table>${head('Map')}${m}</table>${t ? `<h4>Per spot type</h4><table>${head('Type')}${t}</table>` : ''}<p class="hint">Every round you play counts (free play, daily, challenges), except replays of spots you already played.</p>` : '<p class="dim">No rounds yet: your averages per map and spot type show up here after your first game.</p>';
+}
+const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 const store = { get() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } }, set(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { } } };
 const upd = f => { const o = store.get(); f(o); store.set(o); };
 const fnv = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
@@ -20,7 +63,7 @@ const b64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += S
 const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 const square = p => p == null ? '⬛' : p >= 4000 ? '🟩' : p >= 2000 ? '🟨' : p >= 500 ? '🟧' : '🟥';
 const fp = e => `${e.placements}|${e.bounds.map(Math.round).join('|')}`;
-const diag = n => { const b = S.index.districts.find(d => d.name === n).bounds; return Math.hypot(b[2] - b[0], b[3] - b[1]); };
+const diag = n => { const e = S.index && S.index.districts.find(d => d.name === n); return e ? Math.hypot(e.bounds[2] - e.bounds[0], e.bounds[3] - e.bounds[1]) : 200000; };
 const RCAP = 2500;
 const capOf = moved => moved > 0 ? Math.max(MAXP - 1000, Math.round(MAXP - 25 * moved / 100)) : MAXP;
 const away = (sp, g) => Math.hypot(g[0] - sp.x, g[1] - sp.y);
@@ -93,7 +136,7 @@ function checkChallenge(o) {
   const spots = o.sp.map(a => {
     if (!Array.isArray(a) || a.length < 5 || !int(a[0], 0, DLIST.length - 1) || !a.slice(1, 5).every(Number.isFinite)) throw new Error('broken challenge');
     const sp = { d: DLIST[a[0]], x: a[1] * 10, y: a[2] * 10, z: a[3] * 10, yaw: a[4] / 1000 };
-    if (!inside(sp.d, sp.x, sp.y, 20000) || Math.abs(sp.z) > 1e7 || Math.abs(sp.yaw) > 100) throw new Error('broken challenge');
+    if (!bnd(sp.d) || !inside(sp.d, sp.x, sp.y, 20000) || Math.abs(sp.z) > 1e7 || Math.abs(sp.yaw) > 100) throw new Error('broken challenge');
     return sp;
   });
   const guess = (g, k) => {
@@ -113,15 +156,16 @@ const PMAX = 60;
 function capPlayers(spots, list, me) {
   if (list.length <= PMAX) return list;
   const keep = bestPerName(spots, list).map(([p]) => p);
-  if (me && !keep.includes(me)) keep.unshift(me);
-  const out = keep.slice(0, PMAX);
-  if (me && !out.includes(me)) out[PMAX - 1] = me;
+  if (me && !keep.some(p => p === me || JSON.stringify(p) === JSON.stringify(me))) keep.unshift(me);
+  const mk = me ? JSON.stringify(me) : null, isMe = p => p === me || (mk !== null && JSON.stringify(p) === mk);
+  const out = keep.filter((p, k) => !isMe(p) || keep.findIndex(isMe) === k).slice(0, PMAX);
+  if (me && !out.some(isMe)) out[out.length < PMAX ? out.length : PMAX - 1] = me;
   return out;
 }
 function mergePlayers(id, list, spots, me) {
   let all = [];
   upd(o => {
-    o.ch = o.ch || {}; const c = o.ch[id] || { p: [] }, seen = new Set(c.p.map(p => JSON.stringify(p)));
+    o.ch = o.ch && typeof o.ch === 'object' ? o.ch : {}; const c = o.ch[id] && Array.isArray(o.ch[id].p) ? o.ch[id] : { p: [] }, seen = new Set(c.p.map(p => JSON.stringify(p)));
     for (const p of list) { const k = JSON.stringify(p); if (!seen.has(k)) { seen.add(k); c.p.push(p); } }
     if (spots) { const mk = me ? JSON.stringify(me) : null; c.p = capPlayers(spots, c.p, mk ? c.p.find(p => JSON.stringify(p) === mk) : null); }
     c.ts = Date.now(); o.ch[id] = c; all = c.p;
@@ -158,16 +202,17 @@ const hooks = {
   click(x, y) { if (!T || T.view !== 'map') return; T.pin = [Math.round(x / 10) * 10, Math.round(y / 10) * 10]; $('#tip').style.display = 'none'; A.draw2d(); bar(); },
   walk(k, dt, fwd, right, p) {
     if (!T || T.view !== 'street' || T.asking) return;
-    const f = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0), s = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
-    if (!f && !s) return;
-    if (!T.st.m) { k.clear(); toast('Moving is off in this game: look around with the mouse'); return; }
-    if (!T.moveOk) { k.clear(); askMove(); return; }
+    const kf = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0), ks = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
+    const f = kf || -JOY.y, s = ks || JOY.x, mag = kf || ks ? 1 : Math.min(1, Math.hypot(JOY.x, JOY.y));
+    if ((!f && !s) || mag < 0.15) return;
+    if (!T.st.m) { k.clear(); joyReset(); toast('Moving is off in this game: look around with the mouse'); return; }
+    if (!T.moveOk) { k.clear(); joyReset(); askMove(); return; }
     let dx = -Math.sin(V3.yaw) * f + Math.cos(V3.yaw) * s, dz = -Math.cos(V3.yaw) * f - Math.sin(V3.yaw) * s;
-    const l = Math.hypot(dx, dz), sp = 450 * (k.has('shift') ? 2 : 1) * dt; dx *= sp / l; dz *= sp / l;
+    const l = Math.hypot(dx, dz), sp = 450 * (k.has('shift') || JOY.run ? 2 : 1) * mag * dt; dx *= sp / l; dz *= sp / l;
     let step = tryStep(p, dx, dz) || tryStep(p, dx, 0) || tryStep(p, 0, dz);
     if (!step) return;
     let [nx, nz, ny] = step; const ox = nx - T.sp.x, oz = nz - T.sp.y, r = Math.hypot(ox, oz);
-    if (r > LIMIT) { nx = T.sp.x + ox * LIMIT / r; nz = T.sp.y + oz * LIMIT / r; ny = p.y; if (!T.edge) { T.edge = true; toast('You can walk up to 40 m from the start'); } }
+    if (r > LIMIT) { if (!T.edge) { T.edge = true; toast('You can walk up to 40 m from the start'); } const cx = T.sp.x + ox * LIMIT / r - p.x, cz = T.sp.y + oz * LIMIT / r - p.z; if (Math.hypot(cx, cz) < 1) return; const c = tryStep(p, cx, cz); if (!c) return; [nx, nz, ny] = c; }
     p.x = nx; p.z = nz; p.y = ny;
     const m = Math.hypot(nx - T.sp.x, nz - T.sp.y); if (m > T.moved) { T.moved = m; capText(); }
   },
@@ -183,14 +228,39 @@ const hooks = {
     if (T.view === 'reveal' || T.view === 'look') {
       const k = T.round, line = (gx, gy, col, w) => { const [a, b] = A.w2s(gx, gy), [c, d] = A.w2s(sp.x, sp.y); g.save(); g.setLineDash([7, 6]); g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke(); g.restore(); };
       for (const p of T.others || []) { const q = p[1][k]; if (q) { line(q[0] * 10, q[1] * 10, 'rgba(154,208,255,.55)', 2); pin(q[0] * 10, q[1] * 10, '#9ad0ff', p[0]); } }
-      const r = T.res[k]; if (r && r.g) { line(r.g[0], r.g[1], '#f2a33a', 3); pin(r.g[0], r.g[1], '#f2a33a', 'You'); }
-      const [sx, sy] = A.w2s(sp.x, sp.y); g.save(); g.fillStyle = '#2bb673'; g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(sx, sy, 9, 0, 7); g.fill(); g.stroke(); g.restore();
+      const [sx, sy] = A.w2s(sp.x, sp.y), r = T.res[k];
+      if (r && r.g) {
+        const [gx, gy] = A.w2s(r.g[0], r.g[1]), rad = Math.hypot(gx - sx, gy - sy);
+        if (rad > 14) { g.save(); g.strokeStyle = 'rgba(242,163,58,.35)'; g.fillStyle = 'rgba(242,163,58,.06)'; g.lineWidth = 1.5; g.beginPath(); g.arc(sx, sy, rad, 0, 7); g.fill(); g.stroke(); g.restore(); }
+        line(r.g[0], r.g[1], '#f2a33a', 3); pin(r.g[0], r.g[1], '#f2a33a', 'You');
+        if (r.m != null && rad > 60) { const t = dist(r.m), mx = (sx + gx) / 2, my = (sy + gy) / 2; g.save(); g.font = '600 12px Inter,system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; const w = g.measureText(t).width + 12; g.fillStyle = 'rgba(15,17,21,.88)'; g.beginPath(); g.roundRect(mx - w / 2, my - 10, w, 20, 6); g.fill(); g.fillStyle = '#f2a33a'; g.fillText(t, mx, my); g.restore(); }
+      }
+      const hd = heading2d(sp); if (hd) { const [ux, uy] = hd, ax = sx + ux * 34, ay = sy + uy * 34; g.save(); g.strokeStyle = '#2bb673'; g.fillStyle = '#2bb673'; g.lineWidth = 3; g.beginPath(); g.moveTo(sx + ux * 10, sy + uy * 10); g.lineTo(ax, ay); g.stroke(); g.beginPath(); g.moveTo(ax + ux * 9, ay + uy * 9); g.lineTo(ax - uy * 6, ay + ux * 6); g.lineTo(ax + uy * 6, ay - ux * 6); g.closePath(); g.fill(); g.restore(); } g.save(); g.fillStyle = '#2bb673'; g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(sx, sy, 9, 0, 7); g.fill(); g.stroke(); g.restore();
       return;
     }
     if (T.pin) pin(T.pin[0], T.pin[1], '#f2a33a');
   },
 };
 
+function heading2d(sp) {
+  if (!Number.isFinite(sp.yaw)) return null;
+  const [a, b] = A.w2s(sp.x, sp.y), [c, d] = A.w2s(sp.x - Math.sin(sp.yaw) * 1000, sp.y - Math.cos(sp.yaw) * 1000), l = Math.hypot(c - a, d - b);
+  return l > 1e-6 ? [(c - a) / l, (d - b) / l] : null;
+}
+const facing = sp => Number.isFinite(sp.yaw) ? COMPASS[((Math.round(-sp.yaw / (Math.PI / 4)) % 8) + 8) % 8] : '';
+const JOY = { x: 0, y: 0, run: false, id: null };
+const pad = () => matchMedia('(any-pointer: coarse)').matches;
+function joyReset() { JOY.x = 0; JOY.y = 0; JOY.id = null; const k = $('#geojoy i'); if (k) k.style.transform = ''; }
+function joyShow() { const on = !!(T && T.view === 'street' && T.st.m && pad()); document.body.classList.toggle('walkpad', on); if (!on) joyReset(); }
+(() => {
+  const j = $('#geojoy'), knob = j.querySelector('i'), run = $('#georun');
+  const move = e => { const r = j.getBoundingClientRect(), R = r.width / 2; let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } JOY.x = x; JOY.y = y; knob.style.transform = `translate(${x * R * 0.6}px,${y * R * 0.6}px)`; V3.dirty = true; };
+  j.addEventListener('pointerdown', e => { e.preventDefault(); JOY.id = e.pointerId; try { j.setPointerCapture(e.pointerId); } catch { } move(e); });
+  j.addEventListener('pointermove', e => { if (e.pointerId === JOY.id) move(e); });
+  const end = e => { if (e.pointerId === JOY.id) joyReset(); };
+  j.addEventListener('pointerup', end); j.addEventListener('pointercancel', end); j.addEventListener('lostpointercapture', end);
+  run.onclick = () => { JOY.run = !JOY.run; run.classList.toggle('on', JOY.run); run.setAttribute('aria-pressed', String(JOY.run)); };
+})();
 const EYE = 170, ray = new THREE.Raycaster(), rv = new THREE.Vector3(), rd = new THREE.Vector3();
 const solids = () => V3.groups.filter(g => g.isInstancedMesh);
 function tryStep(p, dx, dz) {
@@ -206,7 +276,7 @@ function tryStep(p, dx, dz) {
 async function askMove() {
   const t = T, k = T.round; t.asking = true;
   const ok = await ask(`<b>Walk around?</b><p class="dim" style="margin:8px 0 0">Every metre you walk takes 25 points off this round's 5,000 maximum (4,000 at the 40 m limit). Walking back does not raise it again.</p>`, 'Walk', 'Stay here');
-  t.asking = false; if (ok && T === t && t.round === k && t.view === 'street') { t.moveOk = true; toast('Walking: WASD or arrow keys, Shift to run'); }
+  t.asking = false; if (ok && T === t && t.round === k && t.view === 'street') { t.moveOk = true; toast(pad() && touchOnly() ? 'Walking: use the joystick, Run to go faster' : 'Walking: WASD or arrow keys, Shift to run'); }
 }
 const capNow = () => Math.min(capOf(T.moved), T.rcap || MAXP);
 function capText() { const el = $('#gcap'); if (el) el.textContent = capNow() < MAXP ? `Max ${nf(capNow())}` : ''; }
@@ -217,7 +287,7 @@ function bar() {
   $('#geobar').innerHTML = `<span class="gi"><span>Round <b>${k + 1}/${T.st.r}</b></span><span class="hide-s">${esc(DNAME[T.sp.d])}</span><span>Score <b>${nf(total())}</b></span><span class="cap" id="gcap"></span><span class="tm" id="gtm"></span></span>
     ${T.view === 'street' ? `<button class="primary" id="gmap">Guess on the map</button>` : ''}${inMap ? `<button id="gstreet">Back to the street</button><button class="primary" id="gok" ${T.pin ? '' : 'disabled'}>Guess</button>` : ''}
     <button id="gquit" aria-label="Quit game" title="Quit">✕</button>`;
-  capText(); tick();
+  capText(); tick(); joyShow();
   if ($('#gmap')) $('#gmap').onclick = toMap; if ($('#gstreet')) $('#gstreet').onclick = toStreet; if ($('#gok')) $('#gok').onclick = confirmGuess;
   $('#gquit').onclick = quit;
 }
@@ -230,7 +300,7 @@ function startTimer() {
   T.deadline = performance.now() + T.st.t * 1000;
   timer = setInterval(() => { if (!T || (T.view !== 'street' && T.view !== 'map')) { clearInterval(timer); return; } tick(); if (performance.now() >= T.deadline) { clearInterval(timer); timeUp(); } }, 250);
 }
-async function timeUp() { closeAsk(); if (T.view === 'street') await toMap(); if (!T) return; toast(T.pin ? 'Time is up: your pin counts' : 'Time is up'); confirmGuess(true); }
+async function timeUp() { const t = T; if (!t) return; closeAsk(); if (t.view === 'street') await toMap(); if (T !== t) return; toast(T.pin ? 'Time is up: your pin counts' : 'Time is up'); confirmGuess(true); }
 
 function enter() {
   prev = { opt: { ...S.opt }, season: S.season, on: [...S.on], mode: S.mode };
@@ -243,7 +313,7 @@ function enter() {
   history.replaceState(null, '', '#geo');
 }
 async function leave() {
-  closeAsk(); clearInterval(timer); T = null; S.geo = null; card(''); hint(''); $('#georeveal').style.display = 'none';
+  if (A.cancelLoad) A.cancelLoad(); closeAsk(); clearInterval(timer); unpins3d(); joyReset(); T = null; S.geo = null; card(''); hint(''); $('#georeveal').style.display = 'none'; document.body.classList.remove('walkpad');
   document.body.classList.remove('geo');
   const pm = prev && prev.mode;
   if (prev) {
@@ -292,7 +362,7 @@ async function start(def) {
   await round(T.res.length);
 }
 async function round(k) {
-  closeAsk(); T.round = k; T.sp = T.spots[k]; T.pin = null; T.moved = 0; T.moveOk = false; T.edge = false; T.fitted = false; T.view = 'load';
+  const t = T; closeAsk(); unpins3d(); T.round = k; T.sp = T.spots[k]; T.pin = null; T.moved = 0; T.moveOk = false; T.edge = false; T.fitted = false; T.view = 'load';
   T.rcap = T.kind === 'daily' && !T.replay && T.seen.includes(k) ? RCAP : MAXP;
   T.others = T.kind === 'challenge' ? T.players : [];
   $('#georeveal').style.display = 'none'; hint(''); bar();
@@ -301,29 +371,30 @@ async function round(k) {
     if (S.name !== sp.d) { $('#district').value = sp.d; await A.loadDistrict(sp.d); }
     await A.setMode('3d');
     if (!V3.ready || V3.builtFor !== sp.d) throw new Error('3D view did not load');
-  } catch (e) { A.fail('Could not load the round: ' + e.message); leave(); return; }
-  if (!T) return;
+  } catch (e) { if (T !== t) return; A.fail('Could not load the round: ' + e.message); leave(); return; }
+  if (T !== t || t.round !== k) return;
   V3.cam.position.set(sp.x, sp.z, sp.y); V3.yaw = sp.yaw; V3.pitch = 0; V3.cam.fov = 60; V3.cam.updateProjectionMatrix(); V3.unmark(); V3.keys.clear(); V3.dirty = true;
   T.view = 'street'; bar(); streetHint(); startTimer();
   if (T.kind === 'daily' && !T.replay) { if (!T.seen.includes(k)) T.seen.push(k); saveDaily(true); if (T.rcap < MAXP) toast(`You left during this round earlier: its maximum is ${nf(T.rcap)}`); }
 }
 const touchOnly = () => matchMedia('(hover: none) and (pointer: coarse)').matches;
-function streetHint() { hint(touchOnly() ? 'Drag to look around · pinch to zoom' : `Drag to look around · wheel to zoom${T.st.m ? ' · WASD to walk (lowers the maximum)' : ''} · G for the map`); }
+function streetHint() { hint(touchOnly() ? `Drag to look around · pinch to zoom${T.st.m ? ' · joystick to walk' : ''}` : `Drag to look around · wheel to zoom${T.st.m ? ' · WASD to walk (lowers the maximum)' : ''} · G for the map`); }
 async function toMap() {
   if (!T || T.view !== 'street') return;
-  T.view = 'map'; bar(); await A.setMode('2d'); if (!T) return;
+  const t = T; T.view = 'map'; bar(); await A.setMode('2d'); if (T !== t || t.view !== 'map') return;
   if (!T.fitted) { A.fit2d(); T.fitted = true; } A.draw2d();
   hint(touchOnly() ? 'Tap the map to place your guess, then Guess' : `Click the map to place your guess · ${T.pin ? 'Enter to confirm · ' : ''}G back to the street`);
 }
 async function toStreet() {
   if (!T || T.view !== 'map') return;
-  T.view = 'street'; bar(); await A.setMode('3d'); streetHint();
+  const t = T; T.view = 'street'; bar(); await A.setMode('3d'); if (T === t && t.view === 'street') streetHint();
 }
 async function confirmGuess(force) {
   if (!T || T.view !== 'map' || (!T.pin && force !== true)) return;
   closeAsk(); clearInterval(timer);
   const sp = T.sp, cap = capNow(), g = T.pin, pts = points(sp, g, cap), m = g ? away(sp, g) / 100 : null;
   T.res[T.round] = { g, cap, pts, m, moved: T.moved > 0, secs: T.st.t ? Math.round(T.st.t - Math.max(0, T.deadline - performance.now()) / 1000) : 0 };
+  if (!T.replay && !T.noBest) recordRound(sp, T.res[T.round]);
   if (T.kind === 'daily' && !T.replay) saveDaily(true);
   T.view = 'reveal'; hint(''); bar();
   const xs = [sp.x], ys = [sp.y]; if (g) { xs.push(g[0]); ys.push(g[1]); }
@@ -339,17 +410,52 @@ function reveal() {
   el.innerHTML = `<div class="big">${r.g ? `${dist(r.m)} away` : 'No guess'} · ${nf(r.pts)} points</div>
     <div class="bar"><i style="width:${(r.pts / MAXP * 100).toFixed(1)}%"></i></div>
     <div class="dim" style="font-size:12.5px">${esc(DNAME[sp.d])}${ra ? ` · the spot is in <b style="color:var(--text)">${esc(ra.name)}</b>` : ''}${r.g && ra && rg ? (rg === ra ? ' · ✓ right area' : ` · you picked ${esc(rg.name)}`) : ''}${r.cap < MAXP ? ` · maximum ${nf(r.cap)}${T.moved > 0 ? ` (walked ${T.moved < 1000 ? (T.moved / 100).toFixed(1) : Math.round(T.moved / 100)} m)` : ' (you left during this round earlier)'}` : ''}</div>
+    ${facing(sp) ? `<div class="dim" style="font-size:12.5px">The view started facing ${facing(sp)} (green arrow).</div>` : ''}
     ${others.length ? `<div class="others">${others.map(([n, d, p]) => `${esc(n)}: ${d == null ? 'no guess' : dist(d)} · ${nf(p)}`).join(' &nbsp;·&nbsp; ')}</div>` : ''}
     <div class="row2"><button id="glook">View the spot</button><button class="primary" id="gnext">${last ? 'See results' : 'Next round'}</button></div>`;
   $('#gnext').onclick = next; $('#glook').onclick = look;
 }
+let P3 = null;
+function pinSprite(label, col) {
+  const c = document.createElement('canvas'), g = c.getContext('2d'), f = '600 26px Inter,system-ui,sans-serif'; g.font = f;
+  const w = Math.ceil(g.measureText(label).width) + 28; c.width = Math.max(64, w); c.height = 110; g.font = f;
+  const cx = c.width / 2; g.fillStyle = 'rgba(15,17,21,.88)'; g.beginPath(); g.roundRect((c.width - w) / 2, 0, w, 40, 10); g.fill();
+  g.fillStyle = '#e9e9ec'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, cx, 21);
+  g.fillStyle = col; g.strokeStyle = 'rgba(0,0,0,.7)'; g.lineWidth = 3; g.beginPath(); g.arc(cx, 66, 15, Math.PI, 0); g.lineTo(cx, 106); g.closePath(); g.fill(); g.stroke();
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, sizeAttenuation: false, fog: false }));
+  s.center.set(0.5, 0); s.scale.set(0.09 * c.width / c.height, 0.09, 1); s.renderOrder = 10; return s;
+}
+function groundAt(x, y, z0) {
+  rv.set(x, z0 + 60000, y); rd.set(0, -1, 0); ray.set(rv, rd); ray.far = 200000;
+  const hit = ray.intersectObjects(solids(), false)[0]; return hit ? hit.point.y : z0;
+}
+function unpins3d() {
+  if (!P3) return;
+  P3.traverse(o => { if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+  if (P3.parent) P3.parent.remove(P3); P3 = null; V3.dirty = true;
+}
+function pins3d() {
+  unpins3d(); if (!T || !V3.scene) return;
+  const sp = T.sp, k = T.round, list = [], r = T.res[k];
+  if (r && r.g) list.push([r.g[0], r.g[1], 'You', '#f2a33a']);
+  for (const p of T.others || []) { const q = p[1][k]; if (q) list.push([q[0] * 10, q[1] * 10, p[0], '#9ad0ff']); }
+  if (!list.length) return;
+  P3 = new THREE.Group(); P3.name = 'geopins';
+  for (const [x, y, label, col] of list) { const s = pinSprite(label, col); s.position.set(x, groundAt(x, y, sp.z) + 60, y); s.userData.label = label; P3.add(s); }
+  V3.scene.add(P3);
+  const [tx, ty] = list[0], dx = tx - sp.x, dy = ty - sp.y; if (Math.hypot(dx, dy) > 50) { V3.yaw = Math.atan2(-dx, -dy); V3.pitch = 0; }
+  V3.dirty = true;
+}
 async function look() {
   if (!T) return; const b = $('#glook');
-  if (T.view === 'reveal') { T.view = 'look'; b.textContent = 'Show the map'; await A.setMode('3d'); const sp = T.sp; V3.cam.position.set(sp.x, sp.z, sp.y); V3.dirty = true; hint('Drag to look around'); }
-  else if (T.view === 'look') { T.view = 'reveal'; b.textContent = 'View the spot'; hint(''); await A.setMode('2d'); A.draw2d(); }
+  const t = T;
+  if (T.view === 'reveal') { T.view = 'look'; b.textContent = 'Show the map'; await A.setMode('3d'); if (T !== t || t.view !== 'look') return; const sp = T.sp; V3.cam.position.set(sp.x, sp.z, sp.y); pins3d(); V3.dirty = true; hint(P3 && P3.children.length ? 'Drag to look around · pins show where everyone guessed' : 'Drag to look around'); }
+  else if (T.view === 'look') { T.view = 'reveal'; b.textContent = 'View the spot'; hint(''); unpins3d(); await A.setMode('2d'); if (T === t) A.draw2d(); }
 }
 async function next() {
   if (!T || (T.view !== 'reveal' && T.view !== 'look')) return;
+  unpins3d();
   if (T.round + 1 < T.st.r) { await round(T.round + 1); return; }
   T.view = 'done'; $('#georeveal').style.display = 'none'; hint(''); await finish();
 }
@@ -368,7 +474,8 @@ function saveDaily(open) {
     if (seen.length) o.daily[T.date].seen = seen;
     if (open && res.length < T.st.r) o.daily[T.date].open = 1;
     kept = o.daily[T.date];
-    const ks = Object.keys(o.daily).sort(); for (const k of ks.slice(0, -60)) delete o.daily[k];
+    const ks = Object.keys(o.daily).sort(); for (const k of ks.slice(0, -DKEEP)) delete o.daily[k];
+    for (const k of ks.slice(0, -DFULL)) { const v = o.daily[k]; if (v && Array.isArray(v.res)) o.daily[k] = { total: v.total, h: v.h ? 1 : 0, n: v.res.length }; }
   });
   return kept;
 }
@@ -393,13 +500,13 @@ async function finish() {
   card(`<h2>${esc(title)}</h2><div class="dim">${esc(mapsOf(T))} · ${T.st.r} rounds${T.st.h ? ' · hard mode' : ''}</div>
     <div class="big">${nf(tot)} <span class="dim" style="font-size:16px;font-weight:500">/ ${nf(max)}</span></div><div class="sq">${T.res.map(r => square(r.g ? r.pts : null)).join('')}</div>
     <table><tr><th>#</th><th>Map</th><th class="r">Distance</th><th class="r">Points</th></tr>${rows}</table>
-    ${T.kind === 'daily' ? `<p class="hint">${firstDaily ? (T.savedTotal != null ? `Your saved result for today is ${nf(T.savedTotal)}: rounds you had already played elsewhere count.` : 'Saved as your result for today.') : 'You already played today\'s challenge: this replay is not saved.'} A new challenge starts at 00:00 UTC.</p>` : ''}
+    ${T.kind === 'daily' ? `<p class="hint">${firstDaily ? (T.savedTotal != null ? `Your saved result for today is ${nf(T.savedTotal)}: rounds you had already played elsewhere count.` : 'Saved as your result for today.') : 'You already played today\'s challenge: this replay is not saved.'} A new challenge starts at 00:00 UTC. <span class="gcd">${untilNext()}</span>.</p>` : ''}
     ${T.kind === 'free' && T.noBest ? '<p class="hint">An earlier day\'s challenge, played for fun: not saved.</p>' : ''}
     ${T.kind === 'free' && !T.noBest ? `<p class="hint">${tot > best ? (best ? `New best for these settings (was ${nf(best)}).` : 'First score for these settings.') : `Best for these settings: ${nf(best)}.`}</p>` : ''}
     ${board ? `<h4>Scoreboard</h4><table>${board.map(([p, t], i) => `<tr class="${p === T.me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(p[0])}</td><td class="r">${nf(t)}</td></tr>`).join('')}${board.extra ? `<tr class="me"><td>–</td><td>${esc(board.extra[0][0])} <span class="dim">(this game, your best counts)</span></td><td class="r">${nf(board.extra[1])}</td></tr>` : ''}</table><p class="hint">Players who opened other copies of the link show up here once you open their links too.</p>` : ''}
     ${T.kind !== 'daily' ? `<div class="opt" style="margin-top:10px"><span>Your name on the scoreboard</span><input type="text" id="gname" maxlength="16" value="${esc(T.name || store.get().name || '')}" placeholder="Name"></div>` : ''}
     <div class="btns"><button class="primary" id="gshare">Copy result</button>${T.kind !== 'daily' ? `<button id="gch">${T.kind === 'challenge' ? 'Pass it on' : 'Challenge friends'}</button>` : ''}</div>
-    <div class="btns" style="margin-top:8px"><button id="gagain">${T.kind === 'free' && !T.noBest ? 'Play again' : 'New game'}</button><button id="gclose">Close</button></div>
+    <div class="btns" style="margin-top:8px"><button id="gagain">${T.kind === 'free' && !T.noBest ? 'Play again' : 'New game'}</button>${T.kind === 'challenge' ? '<button id="grematch" title="Same settings as this challenge, new spots: share the new link with the others">Rematch with new spots</button>' : ''}<button id="gclose">Close</button></div>
     <p class="hint">Copy result copies a line with your score and a link. Challenge links carry every player's guesses, so friends take turns: each one plays and passes the new link on.</p>`);
   const nameIn = $('#gname');
   if (nameIn) nameIn.oninput = () => { const v = nameIn.value.trim().slice(0, 16); upd(o => { o.name = v; }); };
@@ -407,6 +514,7 @@ async function finish() {
   if ($('#gch')) $('#gch').onclick = async () => copy(await challengeLink(), $('#gch'));
   $('#gagain').onclick = () => { const own = T.kind === 'free' && !T.noBest, st = T.st; leave(); if (T === null) setup('free', own ? st : undefined); };
   $('#gclose').onclick = () => leave();
+  if ($('#grematch')) $('#grematch').onclick = async () => { const st = { ...T.st, ty: T.st.ty && T.st.ty.length ? [...T.st.ty] : [...DEF.ty] }, name = T.name; if (st.d !== 'all' && !GEO.ok[st.d]) st.d = 'all'; await leave(); if (T === null) start({ kind: 'free', st, spots: makeSpots(Math.random().toString(36).slice(2), st), name }); };
 }
 async function challengeLink() {
   const name = (($('#gname') && $('#gname').value.trim()) || store.get().name || 'Player').slice(0, 16);
@@ -445,18 +553,26 @@ async function setup(tab, keep) {
   try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
   upd(x => { const t = today(); for (const [k, v] of Object.entries(x.daily || {})) if (v && v.open && (k < t || (Array.isArray(v.res) && v.res.length >= DEF.r))) delete v.open; });
   const o = store.get(), st = { ...DEF, ...(o.set || {}), ...(keep || {}) }; st.ty = (Array.isArray(st.ty) ? st.ty : DEF.ty).filter(t => Object.hasOwn(TNAME, t)); if (st.d !== 'all' && !GEO.ok[st.d]) st.d = 'all';
-  const avail = DLIST.filter(n => GEO.ok[n]), date = today(), dres = o.daily?.[date], dopen = !!(dres && dres.open); let dh = dopen ? (dres.h ? 1 : 0) : o.dailyHard ? 1 : 0;
+  const avail = DLIST.filter(n => GEO.ok[n]), date = today(), d0 = o.daily?.[date], dres = d0 && typeof d0 === 'object' ? { ...d0, res: Array.isArray(d0.res) ? d0.res : [], total: +d0.total || 0 } : undefined, dopen = !!(dres && dres.open); let dh = dopen ? (dres.h ? 1 : 0) : o.dailyHard ? 1 : 0;
   const sw = (id, on) => `<span class="switch ${on ? 'on' : ''}" id="${id}" role="switch" tabindex="0" aria-checked="${on}"></span>`;
   const counts = () => { const P = pools(st); return Object.values(P).reduce((a, p) => a + p.length, 0); };
   card(`<h2>GeoGuesser</h2><div class="dim">You are dropped somewhere in San Paro. Look around, then find the spot on the map.</div>
-    <div class="seg tabs glass" style="padding:4px"><button data-tab="daily" class="${tab === 'daily' ? 'on' : ''}">Daily challenge</button><button data-tab="free" class="${tab !== 'daily' ? 'on' : ''}">Free play</button></div>
+    <div class="seg tabs glass" style="padding:4px"><button data-tab="daily" class="${tab === 'daily' ? 'on' : ''}">Daily challenge</button><button data-tab="free" class="${tab !== 'daily' && tab !== 'stats' ? 'on' : ''}">Free play</button><button data-tab="stats" class="${tab === 'stats' ? 'on' : ''}">Your stats</button></div>
     <div id="gtab"></div>`);
   const draw = () => {
     const el = $('#gtab');
+    if (tab === 'stats') {
+      el.innerHTML = `${statsHtml()}<div class="btns"><button id="greset">Reset stats</button><button id="gcancel">Close</button></div>`;
+      $('#gcancel').onclick = () => card('');
+      $('#greset').onclick = async () => { if (!store.get().stats || !(await ask('<b>Reset your stats?</b><p class="dim" style="margin:8px 0 0">Your averages per map and spot type are cleared. Daily results and bests stay.</p>', 'Reset', 'Keep'))) return; upd(x => { delete x.stats; }); draw(); };
+      return;
+    }
     if (tab === 'daily') {
-      el.innerHTML = `<h4>${esc(date)} (UTC)</h4><div class="dim">5 rounds on two of the six maps, the same spots for everyone today. Walking allowed.</div>
+      const sk = streaks(o.daily || {}, date);
+      el.innerHTML = `<h4>${esc(date)} (UTC)</h4><div class="dim">5 rounds on two of the six maps, the same spots for everyone today. Walking allowed. <span class="gcd">${untilNext()}</span>.</div>
         ${dres ? `<p>${dopen ? `In progress, round ${dres.res.length + 1} of 5 next:` : 'Your result:'} <b>${nf(dres.total)}</b> / 25,000 ${dres.res.map(r => square(r[1] == null ? null : r[0]) + (r[2] ? '🚶' : '')).join('')}${dres.h ? ' 🔒' : ''}</p>` : ''}
         ${dopen ? `<p class="hint">Your first guesses count, so this continues where you left off${dres.h ? ' (in hard mode)' : ''}.${Array.isArray(dres.seen) && dres.seen.includes(dres.res.length) ? ` You left during round ${dres.res.length + 1}: its maximum is now ${nf(RCAP)}.` : ''}</p>` : `<div class="opt"><span>Hard mode<br><span class="hint">no labels or icons on the guessing map</span></span>${sw('ghard', dh)}</div>`}
+        <div class="streak"><span>Streak <b>${sk.cur}</b> day${sk.cur === 1 ? '' : 's'}</span><span>Best <b>${sk.best}</b></span><span>Played <b>${sk.days}</b></span></div>${calendar(o.daily || {}, date)}
         <div class="btns"><button class="primary" id="gstart">${dopen ? 'Continue today\'s challenge' : dres ? 'Play again (not saved)' : 'Play today\'s challenge'}</button>${dres && !dopen ? '<button id="gdshare">Copy result</button>' : ''}<button id="gcancel">Close</button></div>`;
     } else {
       el.innerHTML = `<h4>Settings</h4>
@@ -510,11 +626,15 @@ async function openChallenge(code) {
   };
   $('#gname').onkeydown = e => { if (e.key === 'Enter') $('#gstart').click(); };
 }
+setInterval(() => document.querySelectorAll('#geocard .gcd').forEach(e => { e.textContent = untilNext(); }), 30000);
 async function fromHash(h) {
+  const hs = typeof h === 'string' ? h : location.hash;
+  if (hs === '#geo' && !T) { if ($('#geocard').style.display !== 'block') { const d = store.get().daily?.[today()]; setup(d && !d.open ? 'free' : 'daily'); } return; }
   const m = /^#geo=(.+)$/.exec(typeof h === 'string' ? h : location.hash); if (!m || T) return;
   let v; try { v = decodeURIComponent(m[1]); } catch { oops('This GeoGuesser link does not work: it is cut off or damaged.'); return; }
   if (v === 'daily' || /^daily-\d{4}-\d{2}-\d{2}$/.test(v)) {
     const d = v === 'daily' ? today() : v.slice(6);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || dayAdd(d, 0) !== d) { oops('This GeoGuesser link does not work: that date does not exist.'); return; }
     if (d >= today()) { setup('daily'); return; }
     try { await geoData(); } catch (e) { A.fail('GeoGuesser data could not load: ' + e.message); return; }
     card(`<h2>Daily challenge · ${esc(d)}</h2><div class="dim">This link is for an earlier day. You can play that day's spots for fun (not saved), or today's challenge.</div>
@@ -523,7 +643,7 @@ async function fromHash(h) {
     $('#gnow').onclick = () => setup('daily'); $('#gcancel').onclick = () => card('');
     return;
   }
-  if (v[0] === 'c' || v[0] === 'j') openChallenge(v);
+  if (v[0] === 'c' || v[0] === 'j') openChallenge(v); else oops('This GeoGuesser link does not work: it is cut off or damaged.');
 }
 
 document.addEventListener('keydown', e => {

@@ -116,7 +116,7 @@ function merge(held, fresh, idOf = x => x.id) {
   for (const f of fresh) {
     if (!f) continue; const i = at.get(idOf(f));
     if (i === undefined) { at.set(idOf(f), out.length); out.push(f); added++; continue; }
-    out[i] = f.stages && held[i].stages ? mergeStages(held[i], f) : keepText(held[i], { ...held[i], ...f }); updated++;
+    const h = out[i]; out[i] = f.stages && h.stages ? mergeStages(h, f) : keepText(h, { ...h, ...f }); updated++;
   }
   return { list: out, updated, added };
 }
@@ -127,6 +127,7 @@ function suffixer(held, rowOf) {
 
 async function main() {
   const held = JSON.parse(await fs.readFile(DATA, 'utf8'));
+  for (const k of ['weapons', 'vehicles', 'mods', 'roles', 'contacts', 'daily', 'missions']) if (!Array.isArray(held[k])) held[k] = [];
   const ver = await get(`${API}/version`);
   const version = ver && ((ver.db && ver.db.version) || (ver.live && ver.live.version) || ver.version);
   if (!version) throw new Error('APBDB version not available');
@@ -189,12 +190,12 @@ async function main() {
     else if (!sameEff(list[i].eff, d.eff)) { list[i] = { ...list[i], eff: d.eff }; defsUpdated++; }
   });
 
-  const rl0 = (await get(`${API}/roles`)) || [], rl = LIMIT ? rl0.slice(0, LIMIT) : rl0; console.log(`roles: ${rl.length}`);
+  const rr0 = await get(`${API}/roles`), rl0 = Array.isArray(rr0) ? rr0 : [], rl = LIMIT ? rl0.slice(0, LIMIT) : rl0; console.log(`roles: ${rl.length}`);
   const hr = byId(held.roles, x => x.id), hk = new Map(held.roles.flatMap(r => r.ranks).map(k => [k.id, k.key]));
   const sr = suffixer(held.roles, x => x.row);
   const roles = await pool(rl, 6, async it => {
     const d = await detail('roles', it.sAPBDB); if (!d || !d.aMilestones) return null;
-    const id = u32(d.nSecondaryKey), old = hr.get(id), suf = old ? old.key.match(/_Description(_\d+)?$/)[1] || '' : null;
+    const id = u32(d.nSecondaryKey), old = hr.get(id), suf = old ? (String(old.key).match(/_Description(_\d+)?$/) || [])[1] || '' : null;
     const acts = [0, 1, 2].map(k => obj(d['eActivities_' + k])).filter(Boolean).map(a => a.sAPBDB);
     const ranks = d.aMilestones.map(m => ({ id: u32(m.nSecondaryKey), key: hk.get(u32(m.nSecondaryKey)) || `RoleMilestones_${m.sAPBDB}_Title`, title: text(m.sTitle),
       pass: [num(m.fPassMark_0), num(m.fPassMark_1), num(m.fPassMark_2)], formula: +m.eFormula || 0, ...reward(m.eReward) }));
@@ -204,7 +205,7 @@ async function main() {
 
   roles.forEach((r, i) => { if (!r) return; const { suf, ...rest } = r, sx = suf === null ? sr(r.row) : suf; roles[i] = { id: r.id, key: `PlayerRoles_${r.row}_Description${sx}`, nameKey: `PlayerRoles_${r.row}_DisplayName${sx}`, ...rest }; });
 
-  const cl0 = (await get(`${API}/contacts`)) || [], cl = LIMIT ? cl0.slice(0, LIMIT) : cl0; console.log(`contacts: ${cl.length}`);
+  const cc0 = await get(`${API}/contacts`), cl0 = Array.isArray(cc0) ? cc0 : [], cl = LIMIT ? cl0.slice(0, LIMIT) : cl0; console.log(`contacts: ${cl.length}`);
   const hc = byId(held.contacts, x => x.id), hd = byId(held.daily, x => x.id), sc = suffixer(held.contacts, x => x.row), sd = suffixer(held.daily, x => x.row);
   const daily = [];
   const contacts = await pool(cl, 6, async it => {
@@ -250,8 +251,8 @@ async function main() {
   if (failures > calls * 0.05) throw new Error(`${failures} of ${calls} requests failed; not writing`);
   out.modDefs = { ...(held.modDefs || {}), weapon: defs.weapon, vehicle: defs.vehicle };
   stats.modDefs = { added: defsAdded, updated: defsUpdated };
-  const partial = failures > 0 || empty.length > 0, prev = held.apbdb || {};
-  out.apbdb = { version: partial ? prev.version || null : version, synced: new Date().toISOString(), requests, calls, failures, stats, ...(partial ? { partialOf: version, empty } : {}) };
+  const partial = failures > 0 || empty.length > 0 || LIMIT > 0, prev = held.apbdb || {};
+  out.apbdb = { version: partial ? prev.version || null : version, synced: new Date().toISOString(), requests, calls, failures, stats, ...(partial ? { partialOf: version, empty, ...(LIMIT > 0 ? { limit: LIMIT } : {}) } : {}) };
   await fs.writeFile(DATA, dumpLines(out));
   console.log(`Wrote ${path.relative(ROOT, DATA)} (${calls} requests, ${failures} failed${partial ? `; PARTIAL: version ${version} not marked as synced, the next run tries again` : ''})`);
   if (process.env.GITHUB_STEP_SUMMARY) await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, `## APBDB sync ${version}${partial ? ' (partial)' : ''}\n\n| section | from APBDB | updated | new |\n|---|---|---|---|\n${Object.entries(stats).filter(([k]) => k !== 'modDefs').map(([k, v]) => `| ${k} | ${v.apbdb} | ${v.updated} | ${v.added} |`).join('\n')}\n\nMod effects: ${defsAdded} new, ${defsUpdated} updated. Requests: ${calls}, failed: ${failures}.${empty.length ? ` Empty sections: ${empty.join(', ')}.` : ''}\n`);

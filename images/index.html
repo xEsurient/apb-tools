@@ -12,6 +12,7 @@
     <input id="search" type="search" placeholder="Search names…" autocomplete="off"></div>
   <div class="glass chip">Background <select id="bg" title="Preview background"><option value="dark">Dark</option><option value="light">Light</option><option value="checker">Checker</option></select></div>
   <label class="glass chip toggle" title="Play animated materials and flipbooks"><input id="animate" type="checkbox"> Animate</label>
+  <details id="recentbox" class="glass chip recent"><summary>Recently copied <span id="recentn"></span></summary><div class="recentpop"><div class="row"><b>Recently copied</b><button id="recentclear">Clear</button></div><ul id="recent"></ul></div></details>
   <div style="flex:1"></div>
   <nav class="glass nav"><a href="../maps/">Map viewer</a><a href="../config/">Config merge</a><a class="on" href="./">Image lookup</a><a href="../designer/">Text designer</a><a href="../stats/">Stat tables</a></nav>
 </div>
@@ -53,7 +54,7 @@
         <label>A <input id="alpha" type="number" step="0.05" min="0" max="1" value="1"></label>
       </div>
       <textarea id="line" readonly rows="3"></textarea>
-      <div class="row"><button id="copy" class="primary">Copy to clipboard</button><span id="copied"></span></div>
+      <div class="row"><button id="copy" class="primary">Copy to clipboard</button><button id="link" title="Copies a link that opens this page with this image selected">Copy link</button><span id="copied"></span></div>
       <p id="dnote" class="hint"></p>
     </div>
   </section>
