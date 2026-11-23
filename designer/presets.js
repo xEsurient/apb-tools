@@ -65,7 +65,7 @@ export const SLOTS = [
     ['stock', 'Game default'],
     ['icons', 'Title [Equipment Icons]', (D, P) => {
       const eq = equipOf(D);
-      return mapStock(P, 'MissionTemplates', (k, v) => { const m = /^MissionTemplates_(.+)_MissionTitle$/.exec(k); const e = m && eq.get(m[1]); return e && e.length ? `${v} ${OPAQUE}${e.map(x => `<Images:APBMenus_Art_EquipmentIcons.Icon_Equipment_${EQUIP_ICON[x]};Resize=TRUE XL=16 YL=16>`).join('')}` : undefined; });
+      return mapStock(P, 'MissionTemplates', (k, v) => { const m = /^MissionTemplates_(.+)_MissionTitle$/.exec(k); const e = m && eq.get(m[1]); return e && e.length ? `${v} ${e.map(x => `${OPAQUE}<Images:APBMenus_Art_EquipmentIcons.Icon_Equipment_${EQUIP_ICON[x]};Resize=TRUE XL=16 YL=16>`).join('')}` : undefined; });
     }],
     ['equip', 'Title [Equipment]', (D, P, c) => {
       const eq = new Map([...equipOf(D)].map(([k, v]) => [k, v.join('/')]));

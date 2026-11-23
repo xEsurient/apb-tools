@@ -22,7 +22,7 @@ const fnv = s => { let x = 0x811c9dc5; for (let i = 0; i < s.length; i++) { x ^=
 const SESS = 'apbdesigner-editor-sessions';
 const sessAll = () => { try { const x = JSON.parse(localStorage.getItem(SESS)); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; } catch { return {}; } };
 const sessPut = all => { try { const ks = Object.keys(all).sort((a, b) => all[b].at - all[a].at); for (const k of ks.slice(10)) delete all[k]; if (Object.keys(all).length) localStorage.setItem(SESS, JSON.stringify(all)); else localStorage.removeItem(SESS); } catch { } };
-export function markupIssues(v, kind) {
+export function markupIssues(v, kind, key = '') {
   const out = [], n = re => (v.match(re) || []).length;
   if (kind === 'hud') {
     const o = n(/<col:[^<>\/][^<>]*>/gi), c = n(/<\/col>/gi);
@@ -33,6 +33,14 @@ export function markupIssues(v, kind) {
     if (c > o) out.push(`${c} <Color:/> but only ${o} <Color:…>: a closing tag without its opening tag`);
     if (fc > fo) out.push(`${fc} <Fonts:/> but only ${fo} <Fonts:…>: a closing tag without its opening tag`);
     if (/<\/?col[:>]/i.test(v)) out.push('<col:> is HUD markup and shows as text here (use <Color:>)');
+    if (/^(MissionTemplates|ShopUIFilters)_/i.test(key)) {
+      let lit = false, hid = 0;
+      for (const t of v.match(/<(ImageColour|Images):[^<>]*>/gi) || []) {
+        if (/^<ImageColour:/i.test(t)) { const a = /\bA\s*=\s*(-?[\d.]+)/i.exec(t); lit = !a || +a[1] > 0; }
+        else { if (!lit) hid++; lit = false; }
+      }
+      if (hid) out.push(`${hid} <Images:> without <ImageColour:A=1> right before it: this window starts images at alpha 0, so it stays invisible in game`);
+    }
   }
   if (n(/</g) !== n(/>/g)) out.push('a < or > without its partner');
   return out;
@@ -143,7 +151,7 @@ export function initEditor(root) {
     inGame(stem).then(g => { if (t !== loadSeq) return; GAME = g.base.size ? g.base : null; gameUi(); updaters.forEach(u => u()); if (diffG.checked) filter(); }).catch(() => {});
   };
   const gameUi = () => { diffG.disabled = !GAME; diffL.title = GAME ? 'Only lines whose text differs from the game\'s English (INT) line' : 'Set the game folder (or your config with INT files) at the top to compare with the game'; };
-  const problems = r => { const p = []; if (unknown(r)) p.push('key not in the game\'s English file: the game ignores this line'); if (r.val !== r.orig) p.push(...markupIssues(r.val, kind())); return p; };
+  const problems = r => { const p = []; if (unknown(r)) p.push('key not in the game\'s English file: the game ignores this line'); if (r.val !== r.orig) p.push(...markupIssues(r.val, kind(), r.key)); return p; };
   let keepT = 0;
   const sid = f => f.name + '|' + f.sig;
   const keep = () => { if (!review.hidden && review.dataset.kind === 'save') { review.hidden = true; note.textContent = 'Changed after opening the save review: press Save file again to see the current changes.'; }
@@ -307,7 +315,7 @@ export function initEditor(root) {
     let e = pick();
     const name = h('input', { type: 'text', class: 'fname', value: outName() });
     const warn = [];
-    const unk = ch.filter(unknown), bad = ch.map(r => [r, markupIssues(r.val, kind())]).filter(x => x[1].length);
+    const unk = ch.filter(unknown), bad = ch.map(r => [r, markupIssues(r.val, kind(), r.key)]).filter(x => x[1].length);
     if (unk.length) warn.push(`${unk.length} changed line${unk.length === 1 ? '' : 's'} use${unk.length === 1 ? 's' : ''} a key the game's English file does not have, so the game ignores ${unk.length === 1 ? 'it' : 'them'} (keys must match exactly, typos included): ${unk.slice(0, 6).map(r => r.key).join(', ')}${unk.length > 6 ? ' …' : ''}`);
     if (bad.length) warn.push(`${bad.length} changed line${bad.length === 1 ? ' has' : 's have'} markup problems: ${bad.slice(0, 4).map(([r, p]) => `${r.key} (${p.join('; ')})`).join(', ')}${bad.length > 4 ? ' …' : ''}`);
     if (e.bad.length) warn.push(`This is an 8-bit file and the changed lines use characters it cannot hold (${e.bad.slice(0, 12).join(' ')}). It will be saved as UTF-16 instead (the game reads both; the text of the other lines stays the same).`);
