@@ -69,13 +69,37 @@ function buildTtk() {
   const byRow = new Map(all0.map(w => [w.row, seenSig.get(sig(w))])), byLabel = new Map(pool.map(w => [label(w).toLowerCase(), w]));
   st.w = [...new Set((st.w || []).filter(r => byRow.has(r)).map(r => byRow.get(r).row))].slice(0, 4);
   if (!st.w.length) { st.w = ['Weapon_AssaultRifle_NTEC', 'Weapon_AssaultRifle_STAR'].filter(r => byRow.has(r)); if (st.w.length < 2) st.w = pool.filter(w => w.cat === 'Assault Rifles' && !w.mods.length).slice(0, 2).map(w => w.row); }
-  const dl = h('datalist', { id: 'ttkweapons' }, pool.map(w => h('option', { value: label(w) }, w.cat)));
-  const add = h('input', { type: 'search', list: 'ttkweapons', placeholder: 'Add a weapon (up to 4)…', 'aria-label': 'Add a weapon' });
   const chips = h('div', { class: 'row chips' }), chart = h('div', { class: 'ttkchart' }), tbl = h('div', { class: 'tbl', hidden: true }), legend = h('div', { class: 'ttklegend' });
   const tbBtn = h('button', { 'aria-expanded': 'false', onclick: () => { tbl.hidden = !tbl.hidden; tbBtn.setAttribute('aria-expanded', String(!tbl.hidden)); tbBtn.textContent = tbl.hidden ? 'Show as table' : 'Hide table'; } }, 'Show as table');
   const find = t => { t = t.trim().toLowerCase(); if (!t) return null; return byLabel.get(t) || pool.find(w => plain(w.name).toLowerCase() === t && !w.mods.length) || pool.find(w => plain(w.name).toLowerCase() === t) || pool.find(w => label(w).toLowerCase().startsWith(t)) || pool.find(w => label(w).toLowerCase().includes(t)); };
-  const pick = () => { const w = find(add.value); if (!w) return; add.value = ''; if (!st.w.includes(w.row)) { st.w.push(w.row); if (st.w.length > 4) st.w.shift(); save(); draw(); } };
-  add.addEventListener('change', pick); add.addEventListener('keydown', e => { if (e.key === 'Enter') pick(); });
+  const add = h('input', { type: 'search', placeholder: 'Add a weapon (up to 4): type a name or category…', 'aria-label': 'Add a weapon', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list', 'aria-controls': 'ttkpop', autocomplete: 'off' });
+  const pop = h('div', { class: 'modpop ttkpop', id: 'ttkpop', role: 'listbox' }); let hits = [], cur = 0;
+  const hay = new Map(pool.map(w => [w, `${label(w)} ${w.cat}`.toLowerCase()]));
+  const search = t => {
+    const words = t.trim().toLowerCase().split(/\s+/).filter(Boolean), nm = w => plain(w.name).toLowerCase();
+    const list = words.length ? pool.filter(w => words.every(x => hay.get(w).includes(x))) : pool.slice();
+    const q = words.join(' '), rank = w => !q ? 0 : nm(w).startsWith(q) ? 0 : nm(w).includes(q) ? 1 : label(w).toLowerCase().includes(q) ? 2 : 3;
+    return list.map((w, i) => [rank(w), i, w]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]).slice(0, 80);
+  };
+  const place = () => { const r = add.getBoundingClientRect(), below = window.innerHeight - r.bottom; pop.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - 330))}px`; if (below < 300 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 4}px`; } else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 4}px`; } };
+  const outside = e => { if (e.target !== add && !pop.contains(e.target)) close(); };
+  const onScroll = e => { if (!pop.contains(e.target)) close(); };
+  const close = () => { if (!pop.isConnected) return; pop.remove(); add.setAttribute('aria-expanded', 'false'); document.removeEventListener('mousedown', outside); window.removeEventListener('scroll', onScroll, true); };
+  const show = () => {
+    hits = search(add.value); cur = 0;
+    pop.replaceChildren(...(hits.length ? hits.map((w, i) => h('button', { type: 'button', role: 'option', class: 'modopt ttkopt' + (i === cur ? ' on' : '') + (st.w.includes(w.row) ? ' added' : ''), 'aria-selected': String(i === cur), onmousedown: e => e.preventDefault(), onclick: () => pickW(w) },
+      h('span', { class: 'nm' }, label(w)), h('small', { class: 'hint' }, w.cat + (st.w.includes(w.row) ? ' · shown' : '')))) : [h('p', { class: 'hint', style: 'margin:6px' }, 'No weapon matches.')]));
+    if (!pop.isConnected) { document.body.append(pop); document.addEventListener('mousedown', outside); window.addEventListener('scroll', onScroll, true); add.setAttribute('aria-expanded', 'true'); }
+    place();
+  };
+  const mark = () => { [...pop.querySelectorAll('.ttkopt')].forEach((b, i) => { b.classList.toggle('on', i === cur); b.setAttribute('aria-selected', String(i === cur)); if (i === cur) b.scrollIntoView({ block: 'nearest' }); }); };
+  const pickW = w => { add.value = ''; close(); if (!st.w.includes(w.row)) { st.w.push(w.row); if (st.w.length > 4) st.w.shift(); save(); draw(); } };
+  add.addEventListener('input', show); add.addEventListener('focus', show); add.addEventListener('click', () => { if (!pop.isConnected) show(); });
+  add.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!pop.isConnected) { show(); return; } if (hits.length) { cur = (cur + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length; mark(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); const w = pop.isConnected && hits[cur] ? hits[cur] : find(add.value); if (w) pickW(w); }
+    else if (e.key === 'Escape' && pop.isConnected) { e.preventDefault(); close(); }
+  });
   const link = () => here() + '#ttk?' + new URLSearchParams({ w: st.w.join(','), mods: st.mods ? 1 : 0 });
   const draw = () => {
     const ws = st.w.map(r => byRow.get(r)).filter(Boolean), fs = ws.map(w => ({ w, f: falloff(w.types[0], w.mods, st.mods) })).filter(x => x.f);
@@ -127,7 +151,7 @@ function buildTtk() {
   };
   root.append(h('div', { class: 'card glass' }, h('h3', {}, 'TTK by distance'),
     h('p', { class: 'hint' }, 'Time to kill (or stun) against distance, from the weapon\'s damage falloff: full damage up to its effective range, then falling in a straight line to its minimum damage percentage over the falloff length the game data gives (a sudden drop when that length is 0), and no hits past the maximum range. The falloff length is our reading of the design data (m_fMinDamageRange), not confirmed in game. Same TTK rules as the tables (all pellets hit, reloads counted).'),
-    h('div', { class: 'row' }, add, dl, toggle('Built-in modifications', st.mods, v => { st.mods = v; save(); draw(); }), tbBtn, h('button', { title: 'A link that opens this chart with the same weapons', onclick: e => copy(link(), e.currentTarget) }, 'Copy link')),
+    h('div', { class: 'row' }, add, toggle('Built-in modifications', st.mods, v => { st.mods = v; save(); draw(); }), tbBtn, h('button', { title: 'A link that opens this chart with the same weapons', onclick: e => copy(link(), e.currentTarget) }, 'Copy link')),
     chips, legend, chart, tbl));
   draw();
 }
