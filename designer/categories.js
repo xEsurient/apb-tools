@@ -1,5 +1,6 @@
 import { h, render, seg, toggle, colourPick, colourText, hex2rgb, FONTS, buildFile, saveFile, readFile, store, copyText, intValue } from './core.js';
 import { imagePicker, imageTag, imageByRef, asSel } from './imgpick.js';
+import { onFolder, hasConfig, inGame, findLoc, readLoc } from './folder.js';
 
 const HEADS = { deploy: 'SELECT PRIMARY WEAPON', inventory: 'INVENTORY · WEAPONS', joker: 'JOKER DISTRIBUTION · WEAPONS' };
 const CAT_OF = [[/AssaultRifle/, ['Assault Rifles']], [/SubMachineGun/, ['Sub-Machine Guns']], [/SniperRifle/, ['High Velocity Rifles']], [/SemiAutoRifle|_Rifle$/, ['Rifles']],
@@ -14,17 +15,50 @@ const allLists = D => D.catLists || Object.entries(D.shopFilters).map(([id, rows
 const listOf = (D, id) => allLists(D).find(l => l.id === id) || allLists(D)[0];
 const DEFAULT_ST = { list: 'deploy', key: 'none', yl: 16, font: '', lists: {} };
 const keyOf = (st, L) => st.lists[L.id] && st.lists[L.id].key === 'number' ? 'number' : 'none';
+const CFG = { files: {}, seq: 0, listeners: [] };
+const CFG_FILES = ['ShopUIFilters', 'InventoryItemInfraCategories'];
+export async function loadCategoryConfig() {
+  const t = ++CFG.seq, files = {};
+  if (hasConfig()) for (const f of CFG_FILES) { try { const g = await inGame(f); if (g.has) files[f] = g; } catch { } }
+  if (t !== CFG.seq) return;
+  CFG.files = files; CFG.listeners.forEach(fn => fn());
+}
+onFolder(() => { loadCategoryConfig(); });
+const lineKey = (L, row) => `${L.file}_${row}_${L.col}`;
+export function configValue(L, r) {
+  const g = CFG.files[L.file]; if (!g) return undefined;
+  const v = g.value(lineKey(L, r.row), L.file);
+  return v === undefined || v === r.name ? undefined : v;
+}
+const posIn = m => { const p = new Map(); if (m) [...m.keys()].forEach((k, i) => { const x = k.toLowerCase(); if (!p.has(x)) p.set(x, i); }); return p; };
+export function configOrder(L) {
+  const g = CFG.files[L.file]; if (!g) return null;
+  const own = posIn(g.own), base = posIn(g.base), key = r => lineKey(L, r.row).toLowerCase();
+  if (!L.rows.some(r => own.has(key(r)) || base.has(key(r)))) return null;
+  const rank = (r, i) => own.has(key(r)) ? [0, own.get(key(r))] : base.has(key(r)) ? [1, base.get(key(r))] : [2, i];
+  return L.rows.map((r, i) => ({ r: r.row, k: rank(r, i) })).sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1]).map(x => x.r);
+}
+const pristine = (it, r) => !it || (!it.icon && !it.iconOnly && (it.mode || 'none') === 'none' && (!it.text || it.text === plain(r.name)));
+const reordered = (saved, base) => !!(saved.order && saved.order.some((r, i) => r !== base[i]));
 function listRows(D, st, id) {
   const L = listOf(D, id), base = L.rows, saved = st.lists[L.id] || {};
-  const order = saved.order || base.map(r => r.row);
+  const baseRows = base.map(r => r.row);
+  const order = reordered(saved, baseRows) ? saved.order : configOrder(L) || baseRows;
   const known = new Map(base.map(r => [r.row, r]));
-  const rows = order.filter(r => known.has(r)).concat(base.map(r => r.row).filter(r => !order.includes(r)));
-  saved.order = rows; saved.items = saved.items || {}; st.lists[L.id] = saved;
+  const rows = order.filter(r => known.has(r)).concat(baseRows.filter(r => !order.includes(r)));
+  if (reordered(saved, baseRows)) saved.order = rows; else delete saved.order;
+  saved.items = saved.items || {}; st.lists[L.id] = saved;
   rows.forEach(r => { saved.items[r] = saved.items[r] || { text: plain(known.get(r).name) || r, mode: 'none', 1: '#ffb000', 2: '#ff3d3d', 3: '#7a5cff', icon: null }; });
   return { L, rows, items: saved.items, known };
 }
 function catValue(D, st, id, row, idx) {
-  const R = listRows(D, st, id), it = R.items[row], text = it.text || plain(R.known.get(row).name), key = keyOf(st, R.L);
+  const R = listRows(D, st, id), it = R.items[row], r = R.known.get(row), text = it.text || plain(r.name), key = keyOf(st, R.L);
+  const mine = pristine(it, r) ? configValue(R.L, r) : undefined;
+  if (mine !== undefined) {
+    let v = (key === 'number' ? `${idx + 1}. ` : '') + mine;
+    if (st.font) v = `<Fonts:${st.font}>${v}<Fonts:/>`;
+    return v;
+  }
   const stops = [it[1], it[2]].concat(it.mode === 'triple' ? [it[3]] : []).map(hex2rgb);
   const shown = (key === 'number' ? `${idx + 1}. ` : '') + text;
   const coloured = it.mode === 'none' ? shown : colourText(shown, { mode: it.mode === 'triple' ? 'smooth' : it.mode, stops, kind: 'ui' });
@@ -33,12 +67,16 @@ function catValue(D, st, id, row, idx) {
   if (st.font) v = `<Fonts:${st.font}>${v}<Fonts:/>`;
   return v;
 }
-function catLines(D, st, id) { const R = listRows(D, st, id); return R.rows.map((r, i) => [`${R.L.file}_${r}_${R.L.col}`, catValue(D, st, id, r, i)]); }
+function catLines(D, st, id) { const R = listRows(D, st, id); return R.rows.map((r, i) => [lineKey(R.L, r), catValue(D, st, id, r, i)]); }
 function changed(D, st, id) {
   const s = st.lists && st.lists[id]; if (!s) return false;
   const L = listOf(D, id), base = L.rows.map(r => r.row);
-  if (s.key === 'number' || (s.order && s.order.some((r, i) => r !== base[i]))) return true;
-  return L.rows.some(r => { const it = (s.items || {})[r.row]; return it && (it.icon || it.iconOnly || it.mode !== 'none' || (it.text && it.text !== plain(r.name))); });
+  if (s.key === 'number' || reordered(s, base)) return true;
+  return L.rows.some(r => !pristine((s.items || {})[r.row], r));
+}
+export function categoryBlocks(D) {
+  const st = store.get('categories', structuredClone(DEFAULT_ST));
+  return allLists(D).filter(L => changed(D, st, L.id)).map(L => listRows(D, st, L.id).rows.map(r => lineKey(L, r)));
 }
 export function categoryFiles(D) {
   const st = store.get('categories', structuredClone(DEFAULT_ST)), out = {};
@@ -83,7 +121,7 @@ export function initCategories(root, D) {
   const move = (row, to) => {
     const { rows } = rowsOf(st.list), from = rows.indexOf(row);
     if (from < 0 || to < 0 || to >= rows.length || from === to) return;
-    rows.splice(to, 0, rows.splice(from, 1)[0]); selected = row; save(); draw();
+    rows.splice(to, 0, rows.splice(from, 1)[0]); st.lists[listOf(D, st.list).id].order = rows; selected = row; save(); draw();
   };
   const weaponSuggest = async () => {
     const out = [], seen = new Set();
@@ -111,9 +149,10 @@ export function initCategories(root, D) {
       for (let i = 1; i <= n; i++) cols.append(colourPick('ui', it[i], v => { it[i] = v; save(); refresh(); }));
     };
     drawCols();
-    const icon = asSel(it.icon);
-    editor.append(...[h('h3', {}, 'Category'), h('div', { class: 'hint' }, h('code', {}, `${L.file}_${selected}_${L.col}`), k.hidden ? ' · not listed by the game by default' : ''),
-      h('div', { class: 'field' }, h('label', {}, 'Name'), h('input', { type: 'text', value: it.text, oninput: e => { it.text = e.target.value; save(); refresh(); } })),
+    const icon = asSel(it.icon), mine = pristine(it, k) ? configValue(L, k) : undefined;
+    editor.append(...[h('h3', {}, 'Category'), h('div', { class: 'hint' }, h('code', {}, lineKey(L, selected)), k.hidden ? ' · not listed by the game by default' : ''),
+      mine !== undefined ? h('div', { class: 'hint mine' }, 'Shown and written as your config has it. Changing the name, colour or image here replaces your line.') : null,
+      h('div', { class: 'field' }, h('label', {}, 'Name'), h('input', { type: 'text', value: mine !== undefined ? plain(mine) : it.text, oninput: e => { it.text = e.target.value; save(); refresh(); } })),
       h('div', { class: 'field' }, h('label', {}, 'Colour'), seg([['none', 'Game default'], ['solid', 'Solid'], ['smooth', 'Smooth'], ['triple', 'Triple'], ['rainbow', 'Rainbow']], it.mode, v => { it.mode = v; save(); drawCols(); draw(); }), cols),
       h('div', { class: 'field' }, h('label', {}, 'Image (shown before the name)'), h('div', { class: 'row' }, h('button', { onclick: showPicker }, icon ? 'Change image' : 'Choose image'), icon ? h('code', {}, icon.ref) : h('span', { class: 'hint' }, 'none'))), picker,
       icon ? h('div', { class: 'row' }, toggle('Image only (no name)', !!it.iconOnly, v => { it.iconOnly = v; save(); draw(); }), toggle('Tint the image', !!it.tint, v => { it.tint = v ? '#ffb000' : null; save(); draw(); }), it.tint ? colourPick('ui', it.tint, v => { it.tint = v; save(); refresh(); }) : null,
@@ -137,14 +176,16 @@ export function initCategories(root, D) {
     out.innerHTML = '';
     const fileIn = h('input', { type: 'file', accept: '.int,.ger,.INT,.GER,.txt' });
     fileIn.onchange = async () => { const f = fileIn.files[0]; if (!f) return; try { baseFiles[file] = await readFile(f); drawOut(); } catch (e) { msg.textContent = 'Could not read that file: ' + e.message; } };
-    const ls = catLines(D, st, L.id), base = baseFiles[file];
+    const ls = catLines(D, st, L.id), dir = !baseFiles[file] && findLoc(file, ['GER']);
+    let base = baseFiles[file];
     const msg = h('div', { class: 'hint' });
     out.append(...[h('h3', {}, `Output · ${file}`),
       h('label', { class: 'drop' }, fileIn, '📄 ', h('span', {}, 'Optional: your ', h('b', {}, file), ' file to merge into')),
-      base ? h('div', { class: 'hint' }, `Merging into ${base.name}`) : null,
-      h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => {
+      base ? h('div', { class: 'hint' }, `Merging into ${base.name}`) : dir ? h('div', { class: 'hint' }, `Merging into ${dir.path} from your config / game folder.`) : null,
+      h('div', { class: 'row' }, h('button', { class: 'primary', onclick: async () => {
+        if (!base && dir) { try { base = await readLoc(dir); } catch (e) { msg.textContent = 'Could not read your file: ' + e.message; return; } }
         const all = categoryFiles(D)[file] || ls;
-        const r = buildFile(file, all, base), nm = base ? base.name.replace(/\.int$/i, '.GER') : `${file}.GER`; saveFile(r, nm);
+        const r = buildFile(file, all, base, { blocks: categoryBlocks(D) }), nm = base ? base.name.replace(/\.int$/i, '.GER') : `${file}.GER`; saveFile(r, nm);
         msg.textContent = (base && nm !== base.name ? `Saved as ${nm} (an .INT name would replace the game's English file; rename it if it is your GER copy). ` : '') + (base ? `Saved: ${r.replaced} replaced, ${r.added} added (all ${file} lists you edited).` : `Saved ${r.added} lines (all ${file} lists you edited).`) + (r.bad && r.bad.length && base && base.enc !== r.enc ? ` Saved as UTF-16: the new lines use characters an 8-bit file cannot hold (${r.bad.slice(0, 8).join(' ')}).` : '');
       } }, `Download ${file}`), h('button', { onclick: e => copyText(ls.map(([k, v]) => `${k}=${intValue(v)}`).join('\r\n')).then(ok => { e.target.textContent = ok ? 'Copied' : 'Copy failed: select the text below'; setTimeout(() => e.target.textContent = 'Copy this list', 1600); }) }, 'Copy this list')),
       h('textarea', { rows: 6, readonly: true }, ls.map(([k, v]) => `${k}=${intValue(v)}`).join('\n')), msg].filter(Boolean));
@@ -154,19 +195,21 @@ export function initCategories(root, D) {
     for (const l of allLists(D)) { let g = groups.find(x => x[0] === l.group); if (!g) groups.push(g = [l.group, []]); g[1].push(l); }
     const edited = id => changed(D, st, id);
     const setKey = v => { st.lists[L.id].key = v; save(); draw(); };
-    opts.replaceChildren(
+    opts.replaceChildren(...[
       h('div', { class: 'field' }, h('label', {}, 'List'), h('select', { onchange: e => { st.list = e.target.value; selected = null; save(); draw(); } },
         groups.map(([g, ls]) => h('optgroup', { label: g }, ls.map(l => h('option', { value: l.id, selected: l.id === L.id }, `${l.label} (${l.rows.length})${edited(l.id) ? ' ✎' : ''}`)))))),
-      h('div', { class: 'field' }, h('label', {}, 'Sort key'), seg([['none', 'None (game order)'], ['number', 'Visible numbers (1. 2. …)']], keyOf(st, L), setKey)),
-      L.file !== 'ShopUIFilters' ? h('p', { class: 'hint' }, 'Marketplace names come from InventoryItemInfraCategories.') : null);
+      h('div', { class: 'field' }, h('label', {}, 'Numbers'), seg([['none', 'None'], ['number', 'Visible numbers (1. 2. …)']], keyOf(st, L), setKey)),
+      L.file !== 'ShopUIFilters' ? h('p', { class: 'hint' }, 'Marketplace names come from InventoryItemInfraCategories.') : null,
+      (n => n ? h('p', { class: 'hint mine' }, `Your config: ${n} of ${L.rows.length} categories show your text.${configOrder(L) && !reordered(st.lists[L.id] || {}, L.rows.map(r => r.row)) ? ' Order follows the line order in your file; moving a category starts your own order.' : ''}`) : null)(L.rows.filter(r => configValue(L, r) !== undefined).length)].filter(Boolean));
   };
 
   const top = h('div', { class: 'card glass' },
     h('h3', {}, 'Categories'),
-    h('p', { class: 'hint' }, 'Every category list of the game: weapon tabs, wardrobe clothing types, inventory, Fixer, deploy, armory and Joker store filters, and the marketplace names. Drag the categories (or use ▲ ▼) into the order you want, rename them, colour them and put an image in front (or use the image alone). Whether the game orders a list by its names is untested: the visible numbers (1. 2. …) only change the order if it does. Lists marked ✎ have changes; Download writes every list you changed in that file.'),
+    h('p', { class: 'hint' }, 'Every category list of the game: weapon tabs, wardrobe clothing types, inventory, Fixer, deploy, armory and Joker store filters, and the marketplace names. Drag the categories (or use ▲ ▼) into the order you want, rename them, colour them and put an image in front (or use the image alone). The game lists the categories in the order their lines come in the file, so Download writes each changed list as one block in your order (where its first line was in your file). Visible numbers (1. 2. …) only add the number to the name. Lists marked ✎ have changes; Download writes every list you changed in that file.'),
     opts,
     h('div', { class: 'row' }, h('label', { class: 'hint' }, 'Image height'), h('input', { type: 'number', min: 8, max: 32, value: st.yl, style: 'width:70px', oninput: e => { st.yl = +e.target.value || 16; save(); draw(); } }),
       h('label', { class: 'hint' }, 'Font'), h('select', { onchange: e => { st.font = e.target.value; save(); draw(); } }, h('option', { value: '' }, 'Game default'), FONTS.map(f => h('option', { value: f, selected: st.font === f }, f.split('.').pop().replace(/_/g, ' '))))));
   root.append(top, h('div', { class: 'catlayout' }, panel, h('div', {}, editor, out)));
-  draw();
+  CFG.listeners.push(() => { if (root.isConnected) draw(); });
+  draw(); if (hasConfig() && !Object.keys(CFG.files).length) loadCategoryConfig();
 }

@@ -1,6 +1,6 @@
 import { $, h, render, seg, toggle, colourPick, colourText, hex2rgb, rgb2hex, apbTag, FONTS, store, buildFile, changeReview, named, namedRgb, nearestNamed, namedSelect } from './core.js';
 import { GENS, stripTags } from './gen.js';
-import { categoryFiles } from './categories.js';
+import { categoryFiles, categoryBlocks } from './categories.js';
 import { imagePicker, imageTag, OPAQUE } from './imgpick.js';
 import { LOC, findLoc, readLoc, onFolder, inGame, hasConfig } from './folder.js';
 import { readInputs, writeZip, encodeText, decodeText, download } from '../config/lib.js';
@@ -300,7 +300,7 @@ export async function initPresets(root, D) {
       LOC.files.length ? toggle('Files without a GER copy start from the game\'s full English (INT) file (copies every line: later game updates to those lines will not show)', st.fromInt, v => { st.fromInt = v; save(); body.querySelectorAll('.edreview').forEach(e => e.remove()); }) : null,
       h('div', { class: 'row' }, h('span', { class: 'hint' }, 'Extension'), seg([['GER', '.GER'], ['INT', '.INT']], st.ext, v => { st.ext = v; save(); body.querySelectorAll('.edreview').forEach(e => e.remove()); }),
         h('button', { class: 'primary', onclick: async () => {
-          const files = build(), zip = [], report = [], rv = [];
+          const files = build(), zip = [], report = [], rv = [], blocks = choice('shop') === 'tool' ? categoryBlocks(D) : [];
           for (const [f, ls] of Object.entries(files)) {
             if (!ls.length) continue;
             const same = userFiles ? userFiles.filter(x => x.name.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase() === f.toLowerCase()) : [];
@@ -309,7 +309,7 @@ export async function initPresets(root, D) {
             const base = mine ? { ...decodeText(mine.data), name: mine.name } : dir ? await readLoc(dir) : null;
             const bySec = new Map(); ls.forEach(([k, v, s]) => { const sc = s || f; if (!bySec.has(sc)) bySec.set(sc, []); bySec.get(sc).push([k, v]); });
             let cur = base, r;
-            for (const [sc, l] of bySec) { r = buildFile(sc, l, cur); cur = { text: r.text, enc: r.enc, bom: r.bom }; }
+            for (const [sc, l] of bySec) { r = buildFile(sc, l, cur, { blocks }); cur = { text: r.text, enc: r.enc, bom: r.bom }; }
             const path = mine ? mine.name : dir && dir.lang === 'GER' ? (dir.path.includes('/') ? dir.path : `APBGame/Localization/GER/${dir.path}`) : `APBGame/Localization/GER/${f}.${st.ext}`;
             zip.push({ name: path, data: encodeText(cur.text, cur.enc || 'utf-16le', cur.bom !== false) }); const conv = base && cur.enc === 'utf-16le' && base.enc !== 'utf-16le' ? 'saved as UTF-16: the 8-bit file could not hold the new characters' : '';
             report.push(`${f}: ${ls.length} lines${conv ? ` (${conv})` : ''}`); rv.push({ name: path, base: base && base.text, lines: ls.map(([k, v, sc]) => [k, v, sc || f]), conv });

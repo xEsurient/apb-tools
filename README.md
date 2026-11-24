@@ -235,12 +235,15 @@ use ▲ ▼) into your order, rename them, colour them (solid, smooth, triple, r
 or use the image alone. The image picker offers HUD icons and HUD textures (written as `<APB_Images:…>`) and every
 package image (`<Images:…>`, by package or search); weapon lists also suggest the kill-feed and inventory icons of
 their weapons. Images can be tinted (`<ImageColour:>`, multiplies the picture); **Default icons for empty categories**
-fills weapon lists in one click. Sample weapons of the selected weapon category are shown next to the list. Names can start with visible numbers (1. 2. …); whether the game orders a list by its
-names is untested, so the game's own order may stay. The Valentines and Christmas categories are included; the game gives them
+fills weapon lists in one click. Sample weapons of the selected weapon category are shown next to the list. The game lists the categories in the order their lines come in the file, so
+Download writes each changed list as one block in your order (where its first line was in your file). Visible numbers
+(1. 2. …) only add the number to the name. The Valentines and Christmas categories are included; the game gives them
 no shop, so they normally do not appear. Download writes the list's file (`ShopUIFilters` or
 `InventoryItemInfraCategories`, merged into your file if you pick one) with every list of that file you changed (marked
 ✎). Marketplace names may also
-show where the game names an item's category.
+show where the game names an item's category. With your config (or game folder) set at the top, the lists start from your
+names and your order (the order of the lines in your file); categories you leave unchanged
+keep your lines, and Download merges into your GER file. Moving a category starts your own order.
 
 Gun Game and event weapons (Legacy and Gun Game sets, snowball and egg launchers, Ghostly Flare Gun, …) are part of
 the weapon stats and name generators; their preview can be hidden with one switch.

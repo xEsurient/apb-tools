@@ -137,24 +137,35 @@ export async function readFile(file) {
   return { name: file.name, ...d };
 }
 
-export function buildFile(section, lines, base) {
+export function buildFile(section, lines, base, opts = {}) {
   const eol = '\r\n';
   if (!base) {
     const head = [';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;', `; Generated with the APB Reloaded text designer`, ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;', '', `[${section}]`];
     return { text: head.concat(lines.map(([k, v]) => `${k}=${intValue(v)}`)).join(eol) + eol, enc: 'utf-16le', bom: true, replaced: 0, added: lines.length };
   }
   const src = base.text.split(/\r\n|\n|\r/), want = new Map(lines.map(([k, v]) => [k.toLowerCase(), [k, v]])), done = new Set();
+  const blockOf = new Map(), placed = new Set(), found = new Set();
+  (opts.blocks || []).forEach((b, i) => b.forEach(k => { if (want.has(k.toLowerCase())) blockOf.set(k.toLowerCase(), i); }));
   let sec = '', replaced = 0, secEnd = -1, secStart = -1;
-  const out = src.map((l, i) => {
+  const out = [];
+  for (const l of src) {
     const s = l.trim();
-    if (s.startsWith('[') && s.endsWith(']')) { if (sec.toLowerCase() === section.toLowerCase()) secEnd = i; sec = s.slice(1, -1); if (sec.toLowerCase() === section.toLowerCase()) secStart = i; return l; }
+    if (s.startsWith('[') && s.endsWith(']')) { if (sec.toLowerCase() === section.toLowerCase()) secEnd = out.length; sec = s.slice(1, -1); if (sec.toLowerCase() === section.toLowerCase()) secStart = out.length; out.push(l); continue; }
     const eq = l.indexOf('=');
     if (eq > 0 && !s.startsWith(';') && sec.toLowerCase() === section.toLowerCase()) {
       const k = l.slice(0, eq).trim().toLowerCase(), w = want.get(k);
-      if (w) { done.add(k); replaced++; return `${l.slice(0, eq)}=${intValue(w[1])}`; }
+      if (w && blockOf.has(k)) {
+        const b = blockOf.get(k); if (!found.has(k)) { found.add(k); replaced++; }
+        if (placed.has(b)) continue;
+        placed.add(b);
+        for (const [x, v] of lines) if (blockOf.get(x.toLowerCase()) === b) { done.add(x.toLowerCase()); out.push(`${x}=${intValue(v)}`); }
+        continue;
+      }
+      if (w) { done.add(k); replaced++; out.push(`${l.slice(0, eq)}=${intValue(w[1])}`); continue; }
     }
-    return l;
-  });
+    out.push(l);
+  }
+  const blockNew = [...done].filter(k => blockOf.has(k) && !found.has(k)).length;
   const rest = lines.filter(([k]) => !done.has(k.toLowerCase())).map(([k, v]) => `${k}=${intValue(v)}`);
   if (rest.length) {
     if (secStart < 0) { while (out.length && !out[out.length - 1].trim()) out.pop(); if (out.length) out.push(''); out.push(`[${section}]`, ...rest); }
@@ -162,7 +173,7 @@ export function buildFile(section, lines, base) {
   }
   while (out.length && out[out.length - 1] === '') out.pop();
   const sep = base.text.includes('\r\n') || !base.text.includes('\n') ? eol : '\n', text = out.join(sep) + sep, e = fitEnc(text, base.enc, base.bom, base.orig ?? base.text);
-  return { text, enc: e.enc, bom: e.bom, bad: e.bad, replaced, added: rest.length, orig: base.orig ?? base.text };
+  return { text, enc: e.enc, bom: e.bom, bad: e.bad, replaced, added: rest.length + blockNew, orig: base.orig ?? base.text };
 }
 function keyVals(text) {
   const m = new Map(); let sec = '';
