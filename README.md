@@ -178,7 +178,7 @@ files). Your settings are remembered in the browser.
 
 | Generator | File | What it writes |
 |---|---|---|
-| Weapon stats | `WeaponItemTypes` | time/shots to kill (or stun), past-falloff shots, damage, stamina/hard damage, rate of fire, magazine, reload, equip, range, built-in modifications |
+| Weapon stats | `WeaponItemTypes` | time/shots to kill (or stun), shots and damage past falloff (or one line with the %; not for shotguns), damage, stamina/hard damage, range, reload, equip (stats only by default, about 9 lines, so the text fits the item box; rate of fire, magazine, built-in modifications and the game's description can be switched on but may be cut off in game) |
 | Vehicle stats | `VehicleItemTypes` | Max Health, Max Speed and Max Reverse Speed (m/s and km/h), Cargo Capacity, Explosion Max Damage, Explosion Radius, EMP Vulnerability (%, Immune at 0), built-in modifications |
 | Item name colours | `InventoryItemTypes` | weapon names coloured by shop category, modification names by slot (solid, stepped, smooth, triple, rainbow, font); tick several groups (or Select All / Weapons / Mods) to style them together, or apply one style to all groups |
 | Modification descriptions | `ModifierItemTypes` | slot heading plus the modification's effect lines, with your own colours for positive / negative values and the effect text, and a font |

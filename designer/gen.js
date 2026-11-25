@@ -47,12 +47,13 @@ export const GENS = [
   {
     id: 'weapons', group: 'Items', title: 'Weapon stats', file: 'WeaponItemTypes', kind: 'ui',
     help: 'Writes each weapon\'s description with stats computed from the game\'s own weapon tables, including the weapon\'s built-in modifications.',
-    defaults: { mode: 'stats+desc', useMods: true, label: '#d0d0d0', value: '#ffffff', hi: '#ffb000', dec: 3, hideTest: false,
-      show: { ttk: true, stk: true, far: true, dmg: true, stam: true, hard: true, rpm: true, fire: false, mag: true, reload: true, equip: true, range: true, mods: true } },
+    defaults: { mode: 'stats', useMods: true, label: '#d0d0d0', value: '#ffffff', hi: '#ffb000', dec: 3, hideTest: false, farShow: 'ab',
+      show: { ttk: true, stk: true, far: true, dmg: true, stam: true, hard: true, rpm: false, fire: false, mag: false, reload: true, equip: true, range: true, mods: false } },
     controls: [MODE, ['toggle', 'useMods', 'Apply built-in mods'],
       ['colour', 'label', 'Label colour'], ['colour', 'value', 'Value colour'], ['colour', 'hi', 'Kill line colour'],
       ['seg', 'dec', 'Decimals', [[2, '0.00'], [3, '0.000']]],
-      ['checks', 'show', 'Lines', [['ttk', 'Time to kill'], ['stk', 'Shots to kill'], ['far', 'At max falloff'], ['dmg', 'Damage'], ['stam', 'Stamina damage'], ['hard', 'Hard damage'],
+      ['seg', 'farShow', 'Past falloff', [['ab', 'Shots + damage (2 lines)'], ['d', 'One line (with %)']]],
+      ['checks', 'show', 'Lines', [['ttk', 'Time to kill'], ['stk', 'Shots to kill'], ['far', 'Past falloff (not shotguns)'], ['dmg', 'Damage'], ['stam', 'Stamina damage'], ['hard', 'Hard damage'],
         ['rpm', 'Rate of fire'], ['fire', 'Fire interval'], ['mag', 'Magazine / ammo'], ['reload', 'Reload'], ['equip', 'Equip'], ['range', 'Range'], ['mods', 'Built-in mods']]],
       ['toggle', 'hideTest', 'Hide Gun Game and event weapons in the preview']],
     items(D, s) {
@@ -73,7 +74,10 @@ export const GENS = [
         } else {
           if (sh.ttk) out.push(L(`Time to ${kill}`, sec(st.ttk, d), true));
           if (sh.stk) out.push(L(`Shots to ${kill}`, st.stk, true));
-          if (sh.far && st.farStk) out.push(L(`Past falloff (${n(x.minPct, 0)}%)`, `${st.farStk} shots, ${sec(st.farTtk, d)}`));
+          if (sh.far && st.farStk && w.cat !== 'Shotguns') {
+            if (s.farShow === 'd') out.push(L(`Past falloff (${n(x.minPct, 0)}%)`, `${st.farStk} shots`));
+            else out.push(L('Shots past falloff', st.farStk), L('Damage past falloff', `${n(st.dmg * x.minPct / 100, 1)}${st.rays > 1 ? ' x ' + st.rays : ''}`));
+          }
           if (sh.dmg) out.push(L('Damage', `${n(st.dmg, 1)}${st.rays > 1 ? ' x ' + st.rays : ''}`));
           if (sh.stam) out.push(L('Stamina damage', `${n(st.stam, 1)}${st.rays > 1 ? ' x ' + st.rays : ''}`));
           if (sh.hard) out.push(L('Hard damage', `${n(st.hard, 1)}${st.rays > 1 ? ' x ' + st.rays : ''}`));
